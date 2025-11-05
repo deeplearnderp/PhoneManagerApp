@@ -1,0 +1,14 @@
+C:\Users\coryn\RiderProjects\PhoneManagerApp\PhoneManagerApp\bin\Debug\net8.0-windows\PhoneManagerApp.exe
+C:\Users\coryn\RiderProjects\PhoneManagerApp\PhoneManagerApp\bin\Debug\net8.0-windows\PhoneManagerApp.deps.json
+C:\Users\coryn\RiderProjects\PhoneManagerApp\PhoneManagerApp\bin\Debug\net8.0-windows\PhoneManagerApp.runtimeconfig.json
+C:\Users\coryn\RiderProjects\PhoneManagerApp\PhoneManagerApp\bin\Debug\net8.0-windows\PhoneManagerApp.dll
+C:\Users\coryn\RiderProjects\PhoneManagerApp\PhoneManagerApp\bin\Debug\net8.0-windows\PhoneManagerApp.pdb
+C:\Users\coryn\RiderProjects\PhoneManagerApp\PhoneManagerApp\obj\Debug\net8.0-windows\PhoneManagerApp.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\coryn\RiderProjects\PhoneManagerApp\PhoneManagerApp\obj\Debug\net8.0-windows\PhoneManagerApp.AssemblyInfoInputs.cache
+C:\Users\coryn\RiderProjects\PhoneManagerApp\PhoneManagerApp\obj\Debug\net8.0-windows\PhoneManagerApp.AssemblyInfo.cs
+C:\Users\coryn\RiderProjects\PhoneManagerApp\PhoneManagerApp\obj\Debug\net8.0-windows\PhoneManagerApp.csproj.CoreCompileInputs.cache
+C:\Users\coryn\RiderProjects\PhoneManagerApp\PhoneManagerApp\obj\Debug\net8.0-windows\PhoneManagerApp.dll
+C:\Users\coryn\RiderProjects\PhoneManagerApp\PhoneManagerApp\obj\Debug\net8.0-windows\refint\PhoneManagerApp.dll
+C:\Users\coryn\RiderProjects\PhoneManagerApp\PhoneManagerApp\obj\Debug\net8.0-windows\PhoneManagerApp.pdb
+C:\Users\coryn\RiderProjects\PhoneManagerApp\PhoneManagerApp\obj\Debug\net8.0-windows\PhoneManagerApp.genruntimeconfig.cache
+C:\Users\coryn\RiderProjects\PhoneManagerApp\PhoneManagerApp\obj\Debug\net8.0-windows\ref\PhoneManagerApp.dll

@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "dgSpecHash": "2tqzJw7kMqM=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\coryn\\RiderProjects\\PhoneManagerApp\\PhoneManagerApp\\PhoneManagerApp.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\coryn\\.nuget\\packages\\microsoft-windowsapicodepack-core\\1.1.5\\microsoft-windowsapicodepack-core.1.1.5.nupkg.sha512",
+    "C:\\Users\\coryn\\.nuget\\packages\\microsoft-windowsapicodepack-shell\\1.1.5\\microsoft-windowsapicodepack-shell.1.1.5.nupkg.sha512"
+  ],
+  "logs": []
+}
