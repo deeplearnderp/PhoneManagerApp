@@ -12,3 +12,9 @@ C:\Users\coryn\RiderProjects\PhoneManagerApp\PhoneManagerApp\obj\Debug\net8.0-wi
 C:\Users\coryn\RiderProjects\PhoneManagerApp\PhoneManagerApp\obj\Debug\net8.0-windows\PhoneManagerApp.pdb
 C:\Users\coryn\RiderProjects\PhoneManagerApp\PhoneManagerApp\obj\Debug\net8.0-windows\PhoneManagerApp.genruntimeconfig.cache
 C:\Users\coryn\RiderProjects\PhoneManagerApp\PhoneManagerApp\obj\Debug\net8.0-windows\ref\PhoneManagerApp.dll
+C:\Users\coryn\RiderProjects\PhoneManagerApp\PhoneManagerApp\bin\Debug\net8.0-windows\Microsoft.WindowsAPICodePack.dll
+C:\Users\coryn\RiderProjects\PhoneManagerApp\PhoneManagerApp\bin\Debug\net8.0-windows\Microsoft.WindowsAPICodePack.Shell.dll
+C:\Users\coryn\RiderProjects\PhoneManagerApp\PhoneManagerApp\obj\Debug\net8.0-windows\PhoneManagerApp.csproj.AssemblyReference.cache
+C:\Users\coryn\RiderProjects\PhoneManagerApp\PhoneManagerApp\obj\Debug\net8.0-windows\PhoneMan.6453EEE8.Up2Date
+C:\Users\coryn\RiderProjects\PhoneManagerApp\PhoneManagerApp\bin\Debug\net8.0-windows\Microsoft.Extensions.Logging.Abstractions.dll
+C:\Users\coryn\RiderProjects\PhoneManagerApp\PhoneManagerApp\bin\Debug\net8.0-windows\SharpAdbClient.dll

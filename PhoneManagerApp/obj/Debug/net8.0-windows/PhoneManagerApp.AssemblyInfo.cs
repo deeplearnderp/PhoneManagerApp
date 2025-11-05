@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("PhoneManagerApp")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+f104d1b8cfa17f60398aa6b389fec20de6e823d4")]
 [assembly: System.Reflection.AssemblyProductAttribute("PhoneManagerApp")]
 [assembly: System.Reflection.AssemblyTitleAttribute("PhoneManagerApp")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
