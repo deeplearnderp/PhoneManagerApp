@@ -1,7 +1,6 @@
-// Version 2.0 - Dual mode (MTP + ADB) Android Manager
 using System;
-using System.Collections.Generic;
 using System.Drawing;
+using System.IO;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using PhoneManagerApp.Core;
@@ -10,142 +9,306 @@ namespace PhoneManagerApp
 {
     public partial class Form1 : Form
     {
-        private Button btnConnect;
+        private AdbConnector adbConnector;
+        private ComboBox comboMode;
+        private Button btnConnectPhone;
         private Button btnToggleNotifications;
-        private ComboBox modeSelector;
-        private TreeView treeFiles;
-        private Label lblStatus;
-
-        private IDeviceConnector? connector;
-        private AdbConnector? adbConnector;
+        private Button btnToggleTerminal;
+        private SplitContainer splitContainer;
+        private RichTextBox rtbOutput;
+        private Panel terminalPanel;
+        private RichTextBox terminalOutput;
+        private TextBox terminalInput;
 
         public Form1()
         {
             InitializeComponent();
-            InitializeUI();
+            InitializeLayout();
         }
 
-        private void InitializeUI()
+        private void InitializeLayout()
         {
-            // ===== Mode Selector =====
-            modeSelector = new ComboBox();
-            modeSelector.Items.AddRange(new string[] { "File Explorer (MTP)", "ADB Control Mode" });
-            modeSelector.SelectedIndex = 0;
-            modeSelector.DropDownStyle = ComboBoxStyle.DropDownList;
-            modeSelector.Location = new Point(10, 10);
-            modeSelector.Size = new Size(200, 25);
-            Controls.Add(modeSelector);
+            this.BackColor = Color.White;
+            this.Text = "Phone Manager App";
+            this.MinimumSize = new Size(800, 600);
 
-            // ===== Connect Button =====
-            btnConnect = new Button();
-            btnConnect.Text = "Connect Phone";
-            btnConnect.Location = new Point(220, 10);
-            btnConnect.Size = new Size(130, 25);
-            btnConnect.Click += BtnConnect_Click;
-            Controls.Add(btnConnect);
-
-            // ===== Toggle Notifications Button =====
-            btnToggleNotifications = new Button();
-            btnToggleNotifications.Text = "Toggle Notifications";
-            btnToggleNotifications.Location = new Point(360, 10);
-            btnToggleNotifications.Size = new Size(150, 25);
-            btnToggleNotifications.Enabled = false;
-            btnToggleNotifications.Click += BtnToggleNotifications_Click;
-            Controls.Add(btnToggleNotifications);
-
-            // ===== TreeView =====
-            treeFiles = new TreeView();
-            treeFiles.Location = new Point(10, 50);
-            treeFiles.Size = new Size(760, 400);
-            treeFiles.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-            Controls.Add(treeFiles);
-
-            // ===== Status Label =====
-            lblStatus = new Label();
-            lblStatus.Text = "Status: Disconnected";
-            lblStatus.Location = new Point(10, 460);
-            lblStatus.AutoSize = true;
-            Controls.Add(lblStatus);
-
-            // ===== Form Settings =====
-            Text = "Phone Manager App";
-            Size = new Size(800, 550);
-        }
-
-        private async void BtnConnect_Click(object sender, EventArgs e)
-        {
-            lblStatus.Text = "Connecting...";
-            treeFiles.Nodes.Clear();
-            btnToggleNotifications.Enabled = false;
-
-            string mode = modeSelector.SelectedItem?.ToString() ?? "File Explorer (MTP)";
-
-            if (mode.Contains("MTP"))
+            // --- Top control bar ---
+            var topPanel = new FlowLayoutPanel
             {
-                connector = new AndroidConnector();
-                bool connected = await connector.ConnectAsync();
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                Padding = new Padding(10),
+                BackColor = Color.FromArgb(245, 245, 245)
+            };
 
-                if (connected)
-                {
-                    lblStatus.Text = "Connected (MTP Mode)";
-                    var files = await connector.GetFilesAsync();
+            comboMode = new ComboBox
+            {
+                Width = 150,
+                DropDownStyle = ComboBoxStyle.DropDownList
+            };
+            comboMode.Items.AddRange(new[] { "ADB Control Mode", "File Explorer (MTP)" });
+            comboMode.SelectedIndex = 0;
 
-                    foreach (var f in files)
-                        treeFiles.Nodes.Add(new TreeNode(f));
-                }
-                else
+            btnConnectPhone = new Button { Text = "Connect Phone", AutoSize = true };
+            btnConnectPhone.Click += async (s, e) => await ConnectPhoneAsync();
+
+            btnToggleNotifications = new Button { Text = "Toggle Notifications", AutoSize = true, Enabled = false };
+            btnToggleNotifications.Click += BtnToggleNotifications_Click;
+
+            btnToggleTerminal = new Button { Text = "Show Terminal", AutoSize = true };
+            btnToggleTerminal.Click += (s, e) =>
+            {
+                splitContainer.Panel2Collapsed = !splitContainer.Panel2Collapsed;
+                btnToggleTerminal.Text = splitContainer.Panel2Collapsed ? "Show Terminal" : "Hide Terminal";
+            };
+
+            topPanel.Controls.Add(comboMode);
+            topPanel.Controls.Add(btnConnectPhone);
+            topPanel.Controls.Add(btnToggleNotifications);
+            topPanel.Controls.Add(btnToggleTerminal);
+            Controls.Add(topPanel);
+
+            // --- Split container ---
+            splitContainer = new SplitContainer
+            {
+                Dock = DockStyle.Fill,
+                Orientation = Orientation.Horizontal,
+                SplitterWidth = 6,
+                BackColor = Color.FromArgb(45, 45, 45),
+                IsSplitterFixed = false
+            };
+            Controls.Add(splitContainer);
+
+            // --- Main white output ---
+            rtbOutput = new RichTextBox
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.White,
+                ForeColor = Color.Black,
+                Font = new Font("Segoe UI", 9f),
+                ReadOnly = true,
+                BorderStyle = BorderStyle.None
+            };
+            splitContainer.Panel1.Controls.Add(rtbOutput);
+
+            // --- Terminal Panel (bottom) ---
+            terminalPanel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.FromArgb(20, 20, 20),
+                BorderStyle = BorderStyle.FixedSingle
+            };
+            splitContainer.Panel2.Controls.Add(terminalPanel);
+
+            InitializeTerminalUI();
+
+            splitContainer.Panel2Collapsed = true;
+        }
+
+        private void InitializeTerminalUI()
+        {
+            var titleLabel = new Label
+            {
+                Text = "ADB Terminal",
+                ForeColor = Color.LightGray,
+                BackColor = Color.FromArgb(35, 35, 35),
+                Dock = DockStyle.Top,
+                Height = 28,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(8, 0, 0, 0),
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold)
+            };
+            terminalPanel.Controls.Add(titleLabel);
+
+            var innerPanel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                Padding = new Padding(6),
+                BackColor = Color.FromArgb(25, 25, 25)
+            };
+            terminalPanel.Controls.Add(innerPanel);
+
+            terminalOutput = new RichTextBox
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.Black,
+                ForeColor = Color.FromArgb(0, 255, 0),
+                Font = new Font("Cascadia Mono", 9.5f),
+                ReadOnly = true,
+                BorderStyle = BorderStyle.None,
+                ScrollBars = RichTextBoxScrollBars.Vertical
+            };
+            innerPanel.Controls.Add(terminalOutput);
+
+            var inputTable = new TableLayoutPanel
+            {
+                Dock = DockStyle.Bottom,
+                Height = 34,
+                ColumnCount = 2,
+                RowCount = 1,
+                BackColor = Color.FromArgb(15, 15, 15),
+                Padding = new Padding(0),
+                Margin = new Padding(0)
+            };
+
+            inputTable.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 20));
+            inputTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            inputTable.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            innerPanel.Controls.Add(inputTable);
+
+            var promptLabel = new Label
+            {
+                Text = ">",
+                ForeColor = Color.FromArgb(0, 255, 0),
+                Font = new Font("Cascadia Mono", 9.5f),
+                TextAlign = ContentAlignment.MiddleCenter,
+                Dock = DockStyle.Fill,
+                Margin = new Padding(0)
+            };
+            inputTable.Controls.Add(promptLabel, 0, 0);
+
+            terminalInput = new TextBox
+            {
+                Dock = DockStyle.Fill,
+                BorderStyle = BorderStyle.None,
+                BackColor = Color.Black,
+                ForeColor = Color.White,
+                Font = new Font("Cascadia Mono", 9.5f),
+                Multiline = false,
+                Margin = new Padding(0),
+                Padding = new Padding(0, 6, 0, 0),
+                Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right
+            };
+            inputTable.Controls.Add(terminalInput, 1, 0);
+            terminalInput.KeyDown += TerminalInput_KeyDown;
+            terminalOutput.MouseDown += (s, e) => terminalInput.Focus();
+
+            terminalOutput.AppendText("ADB Terminal Initialized\n");
+            terminalOutput.AppendText("Type a command and press Enter.\n\n");
+        }
+
+        private async void TerminalInput_KeyDown(object? sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Enter)
+            {
+                e.SuppressKeyPress = true;
+                string command = terminalInput.Text.Trim();
+                if (!string.IsNullOrEmpty(command))
                 {
-                    lblStatus.Text = "No MTP device found.";
-                    MessageBox.Show("Could not detect an MTP device.", "Connection Failed",
-                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    terminalOutput.AppendText($"> {command}\n");
+                    terminalInput.Clear();
+                    await ExecuteAdbCommandAsync(command);
                 }
             }
-            else if (mode.Contains("ADB"))
+        }
+
+        private async Task ExecuteAdbCommandAsync(string command)
+        {
+            if (string.IsNullOrWhiteSpace(command)) return;
+
+            // --- CLEAR COMMAND HANDLER ---
+            if (command.Equals("clear", StringComparison.OrdinalIgnoreCase) ||
+                command.Equals("cls", StringComparison.OrdinalIgnoreCase))
             {
-                adbConnector = new AdbConnector();
-                bool connected = await adbConnector.ConnectAsync();
+                terminalOutput.Clear();
+                terminalOutput.AppendText("Terminal cleared.\n\n");
+                return;
+            }
 
-                if (connected)
+            try
+            {
+                string adbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "platform-tools", "adb.exe");
+                if (!File.Exists(adbPath))
                 {
-                    lblStatus.Text = "Connected (ADB Mode)";
-                    btnToggleNotifications.Enabled = true;
+                    terminalOutput.AppendText("ADB not found in platform-tools folder.\n");
+                    return;
+                }
 
-                    var packages = await adbConnector.GetFilesAsync();
-                    foreach (var p in packages)
+                var process = new System.Diagnostics.Process
+                {
+                    StartInfo = new System.Diagnostics.ProcessStartInfo
                     {
-                        if (!string.IsNullOrWhiteSpace(p))
-                            treeFiles.Nodes.Add(new TreeNode(p.Trim()));
+                        FileName = adbPath,
+                        Arguments = command,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
                     }
-                }
-                else
+                };
+
+                process.OutputDataReceived += (s, e) =>
                 {
-                    lblStatus.Text = "No ADB device found.";
-                    MessageBox.Show("Could not detect an ADB-enabled Android device.",
-                        "Connection Failed", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                }
+                    if (!string.IsNullOrEmpty(e.Data))
+                    {
+                        Invoke(new Action(() =>
+                        {
+                            terminalOutput.AppendText(e.Data + "\n");
+                            ScrollTerminalToBottom();
+                        }));
+                    }
+                };
+
+                process.ErrorDataReceived += (s, e) =>
+                {
+                    if (!string.IsNullOrEmpty(e.Data))
+                    {
+                        Invoke(new Action(() =>
+                        {
+                            terminalOutput.SelectionColor = Color.Red;
+                            terminalOutput.AppendText(e.Data + "\n");
+                            terminalOutput.SelectionColor = Color.FromArgb(0, 255, 0);
+                            ScrollTerminalToBottom();
+                        }));
+                    }
+                };
+
+                process.Start();
+                process.BeginOutputReadLine();
+                process.BeginErrorReadLine();
+                await Task.Run(() => process.WaitForExit());
+            }
+            catch (Exception ex)
+            {
+                terminalOutput.AppendText($"Error executing ADB command: {ex.Message}\n");
+                ScrollTerminalToBottom();
+            }
+        }
+
+        private void ScrollTerminalToBottom()
+        {
+            terminalOutput.SelectionStart = terminalOutput.TextLength;
+            terminalOutput.ScrollToCaret();
+        }
+
+        private async Task ConnectPhoneAsync()
+        {
+            adbConnector = new AdbConnector();
+            rtbOutput.AppendText("Connecting to device...\n");
+            bool connected = await adbConnector.ConnectAsync();
+            if (connected)
+            {
+                rtbOutput.AppendText("Device connected successfully.\n");
+                btnToggleNotifications.Enabled = true;
+            }
+            else
+            {
+                rtbOutput.AppendText("Failed to connect device.\n");
             }
         }
 
         private async void BtnToggleNotifications_Click(object sender, EventArgs e)
         {
-            if (adbConnector == null)
-            {
-                MessageBox.Show("No ADB device connected.", "Error",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
+            if (adbConnector == null) return;
 
-            bool success = await adbConnector.ToggleNotificationsAsync(false);
+            bool success = await adbConnector.ToggleNotificationsAsync(enabled: false);
             if (success)
             {
-                MessageBox.Show("Notifications turned OFF.", "Success",
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
-                lblStatus.Text = "Notifications: OFF";
+                MessageBox.Show("Notifications turned OFF.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             else
             {
-                MessageBox.Show("Failed to change notification settings.", "Error",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("Failed to change notification settings.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
     }

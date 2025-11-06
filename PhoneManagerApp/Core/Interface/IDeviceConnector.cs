@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
-namespace PhoneManagerApp.Core
+namespace PhoneManagerApp.Core.Interface
 {
     public interface IDeviceConnector
     {
