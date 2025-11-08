@@ -1,7 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.IO;
+using System.Linq;
+using System.Text.RegularExpressions;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using PhoneManagerApp.Core;
@@ -10,13 +14,9 @@ namespace PhoneManagerApp
 {
     public partial class Form1 : Form
     {
-        // ================================
-        // 🔧 TERMINAL UI SETTINGS (easy tuning)
-        // ================================
         private const int TerminalInputHeight = 28;
         private const int PromptColumnWidth = 18;
         private const float TerminalFontSize = 9.5f;
-        private const int PromptMarginTop = 1;
         private const int InnerPanelTopPadding = 10;
         private static readonly Color PromptColor = Color.FromArgb(0, 255, 0);
         private static readonly Color InputBackColor = Color.Black;
@@ -24,12 +24,18 @@ namespace PhoneManagerApp
         private static readonly Color TerminalBackground = Color.FromArgb(15, 15, 15);
         private static readonly Padding TerminalPadding = new Padding(4, 2, 4, 0);
         private const int MaxInputLines = 5;
-        // ================================
+
+        private string embeddedAdbPath => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "platform-tools", "adb.exe");
+        private const string SystemAdbPathConst = @"C:\\Users\\coryn\\Downloads\\platform-tools-latest-windows\\platform-tools\\adb.exe";
+        private string adbConfigFile => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "adb_config.txt");
 
         private AdbConnector adbConnector;
         private ComboBox comboMode;
         private ComboBox comboConnectionType;
+        private ComboBox comboAdbSource;
         private Button btnConnectPhone;
+        private Button btnScanDevices;
+        private ComboBox comboDevices;
         private Button btnToggleNotifications;
         private Button btnToggleTerminal;
         private SplitContainer splitContainer;
@@ -42,48 +48,55 @@ namespace PhoneManagerApp
         private readonly List<string> commandHistory = new();
         private int historyIndex = -1;
 
+        // 👇 RichText internal padding support
+        private const int EM_SETRECT = 0xB3;
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        static extern IntPtr SendMessage(IntPtr hWnd, int msg, int wParam, ref Rectangle rect);
+
         public Form1()
         {
             InitializeComponent();
             InitializeLayout();
+            LoadAdbSourceConfig();
         }
 
         private void InitializeLayout()
         {
             this.BackColor = Color.White;
             this.Text = "Phone Manager App";
-            this.MinimumSize = new Size(950, 600); // Prevent cutoff
+            this.MinimumSize = new Size(950, 600);
 
-            // --- Top control bar ---
             var topPanel = new FlowLayoutPanel
             {
                 Dock = DockStyle.Top,
                 AutoSize = true,
-                WrapContents = false, // Prevent wrapping
+                WrapContents = false,
+                AutoScroll = true,
                 Padding = new Padding(10),
                 BackColor = Color.FromArgb(245, 245, 245)
             };
 
-            comboMode = new ComboBox
-            {
-                Width = 150,
-                DropDownStyle = ComboBoxStyle.DropDownList
-            };
+            comboMode = new ComboBox { Width = 150, DropDownStyle = ComboBoxStyle.DropDownList };
             comboMode.Items.AddRange(new[] { "ADB Control Mode", "File Explorer (MTP)" });
             comboMode.SelectedIndex = 0;
 
-            // === Connection Type Dropdown ===
-            comboConnectionType = new ComboBox
-            {
-                Width = 150,
-                DropDownStyle = ComboBoxStyle.DropDownList
-            };
+            comboConnectionType = new ComboBox { Width = 150, DropDownStyle = ComboBoxStyle.DropDownList };
             comboConnectionType.Items.AddRange(new[] { "USB", "Wi-Fi (Secure)" });
             comboConnectionType.SelectedIndex = 0;
             comboConnectionType.SelectedIndexChanged += ComboConnectionType_SelectedIndexChanged;
 
+            comboAdbSource = new ComboBox { Width = 160, DropDownStyle = ComboBoxStyle.DropDownList };
+            comboAdbSource.Items.AddRange(new[] { "App Folder ADB", "System ADB" });
+            comboAdbSource.SelectedIndex = 1;
+            comboAdbSource.SelectedIndexChanged += (s, e) => SaveAdbSourceConfig();
+
             btnConnectPhone = new Button { Text = "Connect Phone", AutoSize = true };
             btnConnectPhone.Click += async (s, e) => await ConnectPhoneAsync();
+
+            btnScanDevices = new Button { Text = "Scan Devices", AutoSize = true };
+            btnScanDevices.Click += BtnScanDevices_Click;
+
+            comboDevices = new ComboBox { Width = 220, DropDownStyle = ComboBoxStyle.DropDownList, Visible = false };
 
             btnToggleNotifications = new Button { Text = "Toggle Notifications", AutoSize = true, Enabled = false };
             btnToggleNotifications.Click += BtnToggleNotifications_Click;
@@ -95,7 +108,6 @@ namespace PhoneManagerApp
                 btnToggleTerminal.Text = splitContainer.Panel2Collapsed ? "Show Terminal" : "Hide Terminal";
             };
 
-            // === Status Label ===
             statusLabel = new Label
             {
                 Text = "Status: 🔴 Disconnected",
@@ -109,37 +121,50 @@ namespace PhoneManagerApp
 
             topPanel.Controls.Add(comboMode);
             topPanel.Controls.Add(comboConnectionType);
+            topPanel.Controls.Add(comboAdbSource);
             topPanel.Controls.Add(btnConnectPhone);
+            topPanel.Controls.Add(btnScanDevices);
+            topPanel.Controls.Add(comboDevices);
             topPanel.Controls.Add(btnToggleNotifications);
             topPanel.Controls.Add(btnToggleTerminal);
             topPanel.Controls.Add(statusLabel);
             Controls.Add(topPanel);
 
-            // === Ensure full toolbar visibility ===
+            // Expand form width to fit all controls
             topPanel.Layout += (s, e) =>
             {
                 int totalWidth = 0;
                 foreach (Control ctrl in topPanel.Controls)
                     totalWidth += ctrl.Width + ctrl.Margin.Horizontal;
-
-                totalWidth += 60; // buffer space for padding
-
+                totalWidth += 120;
                 if (this.Width < totalWidth)
                     this.Width = totalWidth;
             };
 
-            // --- Split container ---
+            // Add subtle separator under toolbar
+            var sep = new Panel { Dock = DockStyle.Top, Height = 1, BackColor = Color.FromArgb(220, 220, 220) };
+            Controls.Add(sep);
+            sep.BringToFront();
+            topPanel.BringToFront();
+
             splitContainer = new SplitContainer
             {
                 Dock = DockStyle.Fill,
                 Orientation = Orientation.Horizontal,
                 SplitterWidth = 6,
-                BackColor = Color.FromArgb(45, 45, 45),
-                IsSplitterFixed = false
+                BackColor = Color.FromArgb(45, 45, 45)
             };
             Controls.Add(splitContainer);
 
-            // --- Main output ---
+            // Wrapped output with padding
+            var outputHost = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.White,
+                Padding = new Padding(10, 8, 10, 8)
+            };
+            splitContainer.Panel1.Controls.Add(outputHost);
+
             rtbOutput = new RichTextBox
             {
                 Dock = DockStyle.Fill,
@@ -147,11 +172,16 @@ namespace PhoneManagerApp
                 ForeColor = Color.Black,
                 Font = new Font("Segoe UI", 9f),
                 ReadOnly = true,
-                BorderStyle = BorderStyle.None
+                BorderStyle = BorderStyle.None,
+                DetectUrls = true,
+                WordWrap = true,
+                ScrollBars = RichTextBoxScrollBars.Vertical
             };
-            splitContainer.Panel1.Controls.Add(rtbOutput);
+            outputHost.Controls.Add(rtbOutput);
 
-            // --- Terminal Panel ---
+            // ✅ Apply internal padding fix
+            SetRichTextPadding(rtbOutput, 6, 6, 6, 6);
+
             terminalPanel = new Panel
             {
                 Dock = DockStyle.Fill,
@@ -164,13 +194,13 @@ namespace PhoneManagerApp
             splitContainer.Panel2Collapsed = true;
         }
 
-        private void ComboConnectionType_SelectedIndexChanged(object sender, EventArgs e)
+        // 📏 Add padding to avoid top line clipping
+        private void SetRichTextPadding(RichTextBox box, int left, int top, int right, int bottom)
         {
-            string selected = comboConnectionType.SelectedItem.ToString() ?? "USB";
-            if (selected == "USB")
-                UpdateStatus("Mode: USB Selected", Color.Green);
-            else
-                UpdateStatus("Mode: Wi-Fi Selected", Color.DeepSkyBlue);
+            var rect = box.ClientRectangle;
+            rect.Inflate(-left, -top);
+            rect.Offset(left, top);
+            SendMessage(box.Handle, EM_SETRECT, 0, ref rect);
         }
 
         private void InitializeTerminalUI()
@@ -213,10 +243,8 @@ namespace PhoneManagerApp
                 Dock = DockStyle.Bottom,
                 Height = TerminalInputHeight,
                 ColumnCount = 2,
-                RowCount = 1,
                 BackColor = TerminalBackground,
-                Padding = TerminalPadding,
-                Margin = new Padding(0)
+                Padding = TerminalPadding
             };
             inputTable.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, PromptColumnWidth));
             inputTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
@@ -226,11 +254,9 @@ namespace PhoneManagerApp
             {
                 Text = ">",
                 ForeColor = PromptColor,
-                Font = new Font("Cascadia Mono", TerminalFontSize, FontStyle.Regular, GraphicsUnit.Point),
+                Font = new Font("Cascadia Mono", TerminalFontSize),
                 TextAlign = ContentAlignment.MiddleLeft,
-                Dock = DockStyle.Fill,
-                Margin = new Padding(0, PromptMarginTop, 0, 0),
-                AutoSize = false
+                Dock = DockStyle.Fill
             };
             inputTable.Controls.Add(promptLabel, 0, 0);
 
@@ -240,10 +266,9 @@ namespace PhoneManagerApp
                 BorderStyle = BorderStyle.None,
                 BackColor = InputBackColor,
                 ForeColor = InputForeColor,
-                Font = new Font("Cascadia Mono", TerminalFontSize, FontStyle.Regular, GraphicsUnit.Point),
+                Font = new Font("Cascadia Mono", TerminalFontSize),
                 Multiline = true,
                 AcceptsReturn = true,
-                Margin = new Padding(0),
                 ScrollBars = ScrollBars.Vertical
             };
             inputTable.Controls.Add(terminalInput, 1, 0);
@@ -252,8 +277,7 @@ namespace PhoneManagerApp
             terminalInput.TextChanged += TerminalInput_TextChanged;
             terminalOutput.MouseDown += (s, e) => terminalInput.Focus();
 
-            terminalOutput.AppendText("ADB Terminal Initialized\n");
-            terminalOutput.AppendText("Type a command and press Enter.\n\n");
+            terminalOutput.AppendText("ADB Terminal Initialized\nType a command and press Enter.\n\n");
         }
 
         private void TerminalInput_TextChanged(object? sender, EventArgs e)
@@ -266,35 +290,6 @@ namespace PhoneManagerApp
 
         private async void TerminalInput_KeyDown(object? sender, KeyEventArgs e)
         {
-            if (e.KeyCode == Keys.Up)
-            {
-                if (commandHistory.Count > 0)
-                {
-                    if (historyIndex < commandHistory.Count - 1)
-                        historyIndex++;
-                    terminalInput.Text = commandHistory[commandHistory.Count - 1 - historyIndex];
-                    terminalInput.SelectionStart = terminalInput.Text.Length;
-                }
-                e.SuppressKeyPress = true;
-                return;
-            }
-            else if (e.KeyCode == Keys.Down)
-            {
-                if (historyIndex > 0)
-                {
-                    historyIndex--;
-                    terminalInput.Text = commandHistory[commandHistory.Count - 1 - historyIndex];
-                    terminalInput.SelectionStart = terminalInput.Text.Length;
-                }
-                else
-                {
-                    historyIndex = -1;
-                    terminalInput.Clear();
-                }
-                e.SuppressKeyPress = true;
-                return;
-            }
-
             if (e.KeyCode == Keys.Enter && !e.Shift)
             {
                 e.SuppressKeyPress = true;
@@ -303,115 +298,166 @@ namespace PhoneManagerApp
                 {
                     commandHistory.Add(command);
                     historyIndex = -1;
-
                     terminalOutput.AppendText($"> {command}\n");
                     terminalInput.Clear();
-                    await ExecuteAdbCommandAsync(command);
+                    await ExecuteAdbCommandCaptureAsync(command);
                 }
             }
         }
 
-        private async Task ExecuteAdbCommandAsync(string command)
+        private async void BtnScanDevices_Click(object sender, EventArgs e)
         {
-            if (string.IsNullOrWhiteSpace(command)) return;
-
-            if (command.Equals("clear", StringComparison.OrdinalIgnoreCase) ||
-                command.Equals("cls", StringComparison.OrdinalIgnoreCase))
-            {
-                terminalOutput.Clear();
-                terminalOutput.AppendText("Terminal cleared.\n\n");
-                return;
-            }
-
             try
             {
-                string adbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "platform-tools", "adb.exe");
-                if (!File.Exists(adbPath))
+                btnScanDevices.Enabled = false;
+                UpdateStatus("Scanning…", Color.Goldenrod);
+                rtbOutput.AppendText("[Scan] Starting scan...\n");
+
+                var results = new List<string>();
+                string list = await ExecuteAdbCommandCaptureAsync("devices");
+
+                foreach (var line in list.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
                 {
-                    terminalOutput.AppendText("ADB not found in platform-tools folder.\n");
-                    return;
+                    if (line.StartsWith("List of devices")) continue;
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+
+                    var parts = line.Split('\t', ' ');
+                    if (parts.Length >= 1 && line.Contains("device"))
+                    {
+                        string id = parts[0].Trim();
+                        if (Regex.IsMatch(id, @"^\d{1,3}(\.\d{1,3}){3}(:\d+)?$"))
+                            results.Add(id);
+                        else if (!string.IsNullOrWhiteSpace(id))
+                            results.Add(id);
+                    }
                 }
 
-                var process = new System.Diagnostics.Process
+                if (results.Count > 0)
                 {
-                    StartInfo = new System.Diagnostics.ProcessStartInfo
-                    {
-                        FileName = adbPath,
-                        Arguments = command,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    }
-                };
-
-                process.OutputDataReceived += (s, e) =>
+                    comboDevices.Items.Clear();
+                    foreach (var item in results)
+                        comboDevices.Items.Add(item);
+                    comboDevices.SelectedIndex = 0;
+                    comboDevices.Visible = true;
+                    btnScanDevices.Visible = false;
+                    UpdateStatus("Devices found", Color.Green);
+                    rtbOutput.AppendText($"[Scan] Found {results.Count} device(s).\n");
+                }
+                else
                 {
-                    if (!string.IsNullOrEmpty(e.Data))
-                        Invoke(new Action(() =>
-                        {
-                            terminalOutput.AppendText(e.Data + "\n");
-                            ScrollTerminalToBottom();
-                        }));
-                };
-
-                process.ErrorDataReceived += (s, e) =>
-                {
-                    if (!string.IsNullOrEmpty(e.Data))
-                        Invoke(new Action(() =>
-                        {
-                            terminalOutput.SelectionColor = Color.Red;
-                            terminalOutput.AppendText(e.Data + "\n");
-                            terminalOutput.SelectionColor = Color.FromArgb(0, 255, 0);
-                            ScrollTerminalToBottom();
-                        }));
-                };
-
-                process.Start();
-                process.BeginOutputReadLine();
-                process.BeginErrorReadLine();
-                await Task.Run(() => process.WaitForExit());
+                    UpdateStatus("No devices detected", Color.Red);
+                    rtbOutput.AppendText("[Scan] No devices detected.\n");
+                }
             }
             catch (Exception ex)
             {
-                terminalOutput.AppendText($"Error executing ADB command: {ex.Message}\n");
-                ScrollTerminalToBottom();
+                UpdateStatus("Scan failed", Color.Red);
+                rtbOutput.AppendText($"[Scan] Error: {ex.Message}\n");
             }
-        }
-
-        private void ScrollTerminalToBottom()
-        {
-            terminalOutput.SelectionStart = terminalOutput.TextLength;
-            terminalOutput.ScrollToCaret();
+            finally
+            {
+                btnScanDevices.Enabled = true;
+            }
         }
 
         private async Task ConnectPhoneAsync()
         {
-            adbConnector = new AdbConnector();
-            rtbOutput.AppendText("Connecting to device...\n");
-            bool connected = await adbConnector.ConnectAsync();
-            if (connected)
+            UpdateStatus("Connecting…", Color.Goldenrod);
+            rtbOutput.AppendText("[Connect] Connecting...\n");
+
+            try
             {
-                rtbOutput.AppendText("Device connected successfully.\n");
-                btnToggleNotifications.Enabled = true;
-                UpdateStatus("Connected (USB)", Color.Green);
+                var mode = comboConnectionType.SelectedItem?.ToString() ?? "USB";
+                string? selected = comboDevices.Visible && comboDevices.SelectedItem != null
+                    ? comboDevices.SelectedItem.ToString()
+                    : null;
+
+                if (mode == "Wi-Fi (Secure)")
+                {
+                    if (string.IsNullOrWhiteSpace(selected))
+                    {
+                        rtbOutput.AppendText("[Connect] No Wi-Fi device selected.\n");
+                        UpdateStatus("Select device", Color.Red);
+                        return;
+                    }
+
+                    string connectOut = await ExecuteAdbCommandCaptureAsync($"connect {selected}");
+                    rtbOutput.AppendText(connectOut + "\n");
+
+                    if (connectOut.Contains("connected to", StringComparison.OrdinalIgnoreCase) ||
+                        connectOut.Contains("already connected", StringComparison.OrdinalIgnoreCase))
+                    {
+                        UpdateStatus($"Connected ({selected})", Color.Green);
+                        btnToggleNotifications.Enabled = true;
+                    }
+                    else
+                    {
+                        UpdateStatus("Connection failed", Color.Red);
+                    }
+                }
+                else
+                {
+                    string list = await ExecuteAdbCommandCaptureAsync("devices");
+                    rtbOutput.AppendText(list + "\n");
+
+                    if (list.Split('\n').Any(l => l.Contains("\tdevice")))
+                    {
+                        UpdateStatus("Connected (USB)", Color.Green);
+                        btnToggleNotifications.Enabled = true;
+                    }
+                    else
+                    {
+                        UpdateStatus("No USB device", Color.Red);
+                    }
+                }
             }
-            else
+            catch (Exception ex)
             {
-                rtbOutput.AppendText("Failed to connect device.\n");
-                UpdateStatus("Disconnected", Color.Red);
+                rtbOutput.AppendText($"[Connect] Error: {ex.Message}\n");
+                UpdateStatus("Connection error", Color.Red);
             }
         }
 
-        private async void BtnToggleNotifications_Click(object sender, EventArgs e)
+        private async Task<string> ExecuteAdbCommandCaptureAsync(string command)
         {
-            if (adbConnector == null) return;
+            try
+            {
+                string adbPath = GetSelectedAdbPath();
+                var psi = new ProcessStartInfo
+                {
+                    FileName = adbPath,
+                    Arguments = command,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    WorkingDirectory = Path.GetDirectoryName(adbPath) ?? AppDomain.CurrentDomain.BaseDirectory
+                };
 
-            bool success = await adbConnector.ToggleNotificationsAsync(enabled: false);
-            if (success)
-                MessageBox.Show("Notifications turned OFF.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            else
-                MessageBox.Show("Failed to change notification settings.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                using var proc = new Process { StartInfo = psi };
+                proc.Start();
+                string stdout = await proc.StandardOutput.ReadToEndAsync();
+                string stderr = await proc.StandardError.ReadToEndAsync();
+                await Task.Run(() => proc.WaitForExit());
+
+                if (!string.IsNullOrWhiteSpace(stderr))
+                    terminalOutput.AppendText(stderr + "\n");
+                if (!string.IsNullOrWhiteSpace(stdout))
+                    terminalOutput.AppendText(stdout + "\n");
+
+                return string.IsNullOrWhiteSpace(stdout) ? stderr : stdout;
+            }
+            catch (Exception ex)
+            {
+                terminalOutput.AppendText($"Error: {ex.Message}\n");
+                return $"Error: {ex.Message}";
+            }
+        }
+
+        private void ComboConnectionType_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            string selected = comboConnectionType.SelectedItem?.ToString() ?? "USB";
+            UpdateStatus($"Mode: {selected} Selected", selected == "USB" ? Color.Green : Color.DeepSkyBlue);
         }
 
         private void UpdateStatus(string text, Color color)
@@ -424,6 +470,48 @@ namespace PhoneManagerApp
 
             statusLabel.Text = $"Status: {text}";
             statusLabel.ForeColor = color;
+        }
+
+        private string GetSelectedAdbPath()
+        {
+            var sel = comboAdbSource.SelectedItem?.ToString() ?? "System ADB";
+            return sel == "App Folder ADB" ? embeddedAdbPath : SystemAdbPathConst;
+        }
+
+        private void SaveAdbSourceConfig()
+        {
+            try
+            {
+                var sel = comboAdbSource.SelectedItem?.ToString();
+                if (!string.IsNullOrWhiteSpace(sel))
+                    File.WriteAllText(adbConfigFile, sel.Contains("App") ? "App" : "System");
+            }
+            catch { }
+        }
+
+        private void LoadAdbSourceConfig()
+        {
+            try
+            {
+                if (File.Exists(adbConfigFile))
+                {
+                    string val = File.ReadAllText(adbConfigFile).Trim();
+                    comboAdbSource.SelectedIndex = (val.Equals("App", StringComparison.OrdinalIgnoreCase)) ? 0 : 1;
+                }
+            }
+            catch { }
+        }
+
+        private async void BtnToggleNotifications_Click(object sender, EventArgs e)
+        {
+            if (adbConnector == null)
+                adbConnector = new AdbConnector();
+
+            bool success = await adbConnector.ToggleNotificationsAsync(enabled: false);
+            MessageBox.Show(success ? "Notifications turned OFF." : "Failed to change notification settings.",
+                success ? "Success" : "Error",
+                MessageBoxButtons.OK,
+                success ? MessageBoxIcon.Information : MessageBoxIcon.Error);
         }
     }
 }
