@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Threading.Tasks;
@@ -9,8 +10,25 @@ namespace PhoneManagerApp
 {
     public partial class Form1 : Form
     {
+        // ================================
+        // 🔧 TERMINAL UI SETTINGS (easy tuning)
+        // ================================
+        private const int TerminalInputHeight = 28;
+        private const int PromptColumnWidth = 18;
+        private const float TerminalFontSize = 9.5f;
+        private const int PromptMarginTop = 1;
+        private const int InnerPanelTopPadding = 10;
+        private static readonly Color PromptColor = Color.FromArgb(0, 255, 0);
+        private static readonly Color InputBackColor = Color.Black;
+        private static readonly Color InputForeColor = Color.White;
+        private static readonly Color TerminalBackground = Color.FromArgb(15, 15, 15);
+        private static readonly Padding TerminalPadding = new Padding(4, 2, 4, 0);
+        private const int MaxInputLines = 5;
+        // ================================
+
         private AdbConnector adbConnector;
         private ComboBox comboMode;
+        private ComboBox comboConnectionType;
         private Button btnConnectPhone;
         private Button btnToggleNotifications;
         private Button btnToggleTerminal;
@@ -18,7 +36,11 @@ namespace PhoneManagerApp
         private RichTextBox rtbOutput;
         private Panel terminalPanel;
         private RichTextBox terminalOutput;
-        private TextBox terminalInput;
+        private BottomAlignedTextBox terminalInput;
+        private Label statusLabel;
+
+        private readonly List<string> commandHistory = new();
+        private int historyIndex = -1;
 
         public Form1()
         {
@@ -30,13 +52,14 @@ namespace PhoneManagerApp
         {
             this.BackColor = Color.White;
             this.Text = "Phone Manager App";
-            this.MinimumSize = new Size(800, 600);
+            this.MinimumSize = new Size(950, 600); // Prevent cutoff
 
             // --- Top control bar ---
             var topPanel = new FlowLayoutPanel
             {
                 Dock = DockStyle.Top,
                 AutoSize = true,
+                WrapContents = false, // Prevent wrapping
                 Padding = new Padding(10),
                 BackColor = Color.FromArgb(245, 245, 245)
             };
@@ -48,6 +71,16 @@ namespace PhoneManagerApp
             };
             comboMode.Items.AddRange(new[] { "ADB Control Mode", "File Explorer (MTP)" });
             comboMode.SelectedIndex = 0;
+
+            // === Connection Type Dropdown ===
+            comboConnectionType = new ComboBox
+            {
+                Width = 150,
+                DropDownStyle = ComboBoxStyle.DropDownList
+            };
+            comboConnectionType.Items.AddRange(new[] { "USB", "Wi-Fi (Secure)" });
+            comboConnectionType.SelectedIndex = 0;
+            comboConnectionType.SelectedIndexChanged += ComboConnectionType_SelectedIndexChanged;
 
             btnConnectPhone = new Button { Text = "Connect Phone", AutoSize = true };
             btnConnectPhone.Click += async (s, e) => await ConnectPhoneAsync();
@@ -62,11 +95,38 @@ namespace PhoneManagerApp
                 btnToggleTerminal.Text = splitContainer.Panel2Collapsed ? "Show Terminal" : "Hide Terminal";
             };
 
+            // === Status Label ===
+            statusLabel = new Label
+            {
+                Text = "Status: 🔴 Disconnected",
+                ForeColor = Color.Red,
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                AutoSize = true,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Margin = new Padding(30, 3, 0, 0),
+                Padding = new Padding(10, 2, 0, 0)
+            };
+
             topPanel.Controls.Add(comboMode);
+            topPanel.Controls.Add(comboConnectionType);
             topPanel.Controls.Add(btnConnectPhone);
             topPanel.Controls.Add(btnToggleNotifications);
             topPanel.Controls.Add(btnToggleTerminal);
+            topPanel.Controls.Add(statusLabel);
             Controls.Add(topPanel);
+
+            // === Ensure full toolbar visibility ===
+            topPanel.Layout += (s, e) =>
+            {
+                int totalWidth = 0;
+                foreach (Control ctrl in topPanel.Controls)
+                    totalWidth += ctrl.Width + ctrl.Margin.Horizontal;
+
+                totalWidth += 60; // buffer space for padding
+
+                if (this.Width < totalWidth)
+                    this.Width = totalWidth;
+            };
 
             // --- Split container ---
             splitContainer = new SplitContainer
@@ -79,7 +139,7 @@ namespace PhoneManagerApp
             };
             Controls.Add(splitContainer);
 
-            // --- Main white output ---
+            // --- Main output ---
             rtbOutput = new RichTextBox
             {
                 Dock = DockStyle.Fill,
@@ -91,7 +151,7 @@ namespace PhoneManagerApp
             };
             splitContainer.Panel1.Controls.Add(rtbOutput);
 
-            // --- Terminal Panel (bottom) ---
+            // --- Terminal Panel ---
             terminalPanel = new Panel
             {
                 Dock = DockStyle.Fill,
@@ -101,8 +161,16 @@ namespace PhoneManagerApp
             splitContainer.Panel2.Controls.Add(terminalPanel);
 
             InitializeTerminalUI();
-
             splitContainer.Panel2Collapsed = true;
+        }
+
+        private void ComboConnectionType_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            string selected = comboConnectionType.SelectedItem.ToString() ?? "USB";
+            if (selected == "USB")
+                UpdateStatus("Mode: USB Selected", Color.Green);
+            else
+                UpdateStatus("Mode: Wi-Fi Selected", Color.DeepSkyBlue);
         }
 
         private void InitializeTerminalUI()
@@ -123,7 +191,7 @@ namespace PhoneManagerApp
             var innerPanel = new Panel
             {
                 Dock = DockStyle.Fill,
-                Padding = new Padding(6),
+                Padding = new Padding(6, InnerPanelTopPadding, 6, 6),
                 BackColor = Color.FromArgb(25, 25, 25)
             };
             terminalPanel.Controls.Add(innerPanel);
@@ -143,58 +211,99 @@ namespace PhoneManagerApp
             var inputTable = new TableLayoutPanel
             {
                 Dock = DockStyle.Bottom,
-                Height = 34,
+                Height = TerminalInputHeight,
                 ColumnCount = 2,
                 RowCount = 1,
-                BackColor = Color.FromArgb(15, 15, 15),
-                Padding = new Padding(0),
+                BackColor = TerminalBackground,
+                Padding = TerminalPadding,
                 Margin = new Padding(0)
             };
-
-            inputTable.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 20));
+            inputTable.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, PromptColumnWidth));
             inputTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            inputTable.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             innerPanel.Controls.Add(inputTable);
 
             var promptLabel = new Label
             {
                 Text = ">",
-                ForeColor = Color.FromArgb(0, 255, 0),
-                Font = new Font("Cascadia Mono", 9.5f),
-                TextAlign = ContentAlignment.MiddleCenter,
+                ForeColor = PromptColor,
+                Font = new Font("Cascadia Mono", TerminalFontSize, FontStyle.Regular, GraphicsUnit.Point),
+                TextAlign = ContentAlignment.MiddleLeft,
                 Dock = DockStyle.Fill,
-                Margin = new Padding(0)
+                Margin = new Padding(0, PromptMarginTop, 0, 0),
+                AutoSize = false
             };
             inputTable.Controls.Add(promptLabel, 0, 0);
 
-            terminalInput = new TextBox
+            terminalInput = new BottomAlignedTextBox
             {
                 Dock = DockStyle.Fill,
                 BorderStyle = BorderStyle.None,
-                BackColor = Color.Black,
-                ForeColor = Color.White,
-                Font = new Font("Cascadia Mono", 9.5f),
-                Multiline = false,
+                BackColor = InputBackColor,
+                ForeColor = InputForeColor,
+                Font = new Font("Cascadia Mono", TerminalFontSize, FontStyle.Regular, GraphicsUnit.Point),
+                Multiline = true,
+                AcceptsReturn = true,
                 Margin = new Padding(0),
-                Padding = new Padding(0, 6, 0, 0),
-                Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right
+                ScrollBars = ScrollBars.Vertical
             };
             inputTable.Controls.Add(terminalInput, 1, 0);
+
             terminalInput.KeyDown += TerminalInput_KeyDown;
+            terminalInput.TextChanged += TerminalInput_TextChanged;
             terminalOutput.MouseDown += (s, e) => terminalInput.Focus();
 
             terminalOutput.AppendText("ADB Terminal Initialized\n");
             terminalOutput.AppendText("Type a command and press Enter.\n\n");
         }
 
+        private void TerminalInput_TextChanged(object? sender, EventArgs e)
+        {
+            int lineCount = terminalInput.GetLineFromCharIndex(terminalInput.TextLength) + 1;
+            lineCount = Math.Min(lineCount, MaxInputLines);
+            int newHeight = TerminalInputHeight + (lineCount - 1) * 14;
+            terminalInput.Parent.Height = newHeight;
+        }
+
         private async void TerminalInput_KeyDown(object? sender, KeyEventArgs e)
         {
-            if (e.KeyCode == Keys.Enter)
+            if (e.KeyCode == Keys.Up)
+            {
+                if (commandHistory.Count > 0)
+                {
+                    if (historyIndex < commandHistory.Count - 1)
+                        historyIndex++;
+                    terminalInput.Text = commandHistory[commandHistory.Count - 1 - historyIndex];
+                    terminalInput.SelectionStart = terminalInput.Text.Length;
+                }
+                e.SuppressKeyPress = true;
+                return;
+            }
+            else if (e.KeyCode == Keys.Down)
+            {
+                if (historyIndex > 0)
+                {
+                    historyIndex--;
+                    terminalInput.Text = commandHistory[commandHistory.Count - 1 - historyIndex];
+                    terminalInput.SelectionStart = terminalInput.Text.Length;
+                }
+                else
+                {
+                    historyIndex = -1;
+                    terminalInput.Clear();
+                }
+                e.SuppressKeyPress = true;
+                return;
+            }
+
+            if (e.KeyCode == Keys.Enter && !e.Shift)
             {
                 e.SuppressKeyPress = true;
                 string command = terminalInput.Text.Trim();
                 if (!string.IsNullOrEmpty(command))
                 {
+                    commandHistory.Add(command);
+                    historyIndex = -1;
+
                     terminalOutput.AppendText($"> {command}\n");
                     terminalInput.Clear();
                     await ExecuteAdbCommandAsync(command);
@@ -206,7 +315,6 @@ namespace PhoneManagerApp
         {
             if (string.IsNullOrWhiteSpace(command)) return;
 
-            // --- CLEAR COMMAND HANDLER ---
             if (command.Equals("clear", StringComparison.OrdinalIgnoreCase) ||
                 command.Equals("cls", StringComparison.OrdinalIgnoreCase))
             {
@@ -240,19 +348,16 @@ namespace PhoneManagerApp
                 process.OutputDataReceived += (s, e) =>
                 {
                     if (!string.IsNullOrEmpty(e.Data))
-                    {
                         Invoke(new Action(() =>
                         {
                             terminalOutput.AppendText(e.Data + "\n");
                             ScrollTerminalToBottom();
                         }));
-                    }
                 };
 
                 process.ErrorDataReceived += (s, e) =>
                 {
                     if (!string.IsNullOrEmpty(e.Data))
-                    {
                         Invoke(new Action(() =>
                         {
                             terminalOutput.SelectionColor = Color.Red;
@@ -260,7 +365,6 @@ namespace PhoneManagerApp
                             terminalOutput.SelectionColor = Color.FromArgb(0, 255, 0);
                             ScrollTerminalToBottom();
                         }));
-                    }
                 };
 
                 process.Start();
@@ -290,10 +394,12 @@ namespace PhoneManagerApp
             {
                 rtbOutput.AppendText("Device connected successfully.\n");
                 btnToggleNotifications.Enabled = true;
+                UpdateStatus("Connected (USB)", Color.Green);
             }
             else
             {
                 rtbOutput.AppendText("Failed to connect device.\n");
+                UpdateStatus("Disconnected", Color.Red);
             }
         }
 
@@ -303,13 +409,21 @@ namespace PhoneManagerApp
 
             bool success = await adbConnector.ToggleNotificationsAsync(enabled: false);
             if (success)
-            {
                 MessageBox.Show("Notifications turned OFF.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            }
             else
-            {
                 MessageBox.Show("Failed to change notification settings.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+
+        private void UpdateStatus(string text, Color color)
+        {
+            if (InvokeRequired)
+            {
+                Invoke(new Action(() => UpdateStatus(text, color)));
+                return;
             }
+
+            statusLabel.Text = $"Status: {text}";
+            statusLabel.ForeColor = color;
         }
     }
 }
