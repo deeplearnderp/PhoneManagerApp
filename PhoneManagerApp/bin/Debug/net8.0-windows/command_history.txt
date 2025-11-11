@@ -1,0 +1,6 @@
+ls
+cls
+ls
+clr
+cls
+ls
