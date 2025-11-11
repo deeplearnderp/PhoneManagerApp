@@ -203,7 +203,6 @@ namespace PhoneManagerApp
                 );
 
                 statusBar.SetLastUpdated(DateTime.Now);
-                terminal.AppendOutput("[AutoRefresh] Updated device stats.");
             }
             catch (Exception ex)
             {
