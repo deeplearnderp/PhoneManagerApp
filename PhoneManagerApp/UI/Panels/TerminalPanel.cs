@@ -1,256 +1,275 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Drawing;
-using System.IO;
-using System.Linq;
-using System.Windows.Forms;
+﻿namespace PhoneManagerApp.UI.Panels;
 
-namespace PhoneManagerApp
+/// <summary>
+///     Terminal panel with scrollable output, persistent command history,
+///     color-coded messages, and autocomplete.
+/// </summary>
+public class TerminalPanel : Panel
 {
-    /// <summary>
-    /// Terminal panel with scrollable output, persistent command history,
-    /// color-coded messages, and autocomplete.
-    /// </summary>
-    public class TerminalPanel : Panel
+    private const int MaxHistoryCount = 100;
+    private readonly List<string> _commandHistory = new();
+
+    private readonly string _historyFile;
+    private readonly Color _inputBackground = Color.FromArgb(35, 35, 35);
+    private readonly Color _inputTextColor = Color.White;
+
+    private readonly Color _terminalBackground = Color.FromArgb(15, 15, 15);
+    private readonly TextBox _terminalInput;
+    private readonly RichTextBox _terminalOutput;
+    private readonly Color _terminalTextColor = Color.Lime;
+    private int _historyIndex = -1;
+
+    public TerminalPanel()
     {
-        private readonly RichTextBox terminalOutput;
-        private readonly TextBox terminalInput;
-        private readonly List<string> commandHistory = new();
-        private int historyIndex = -1;
+        Dock = DockStyle.Bottom;
+        Height = 220;
+        BackColor = _terminalBackground;
+        BorderStyle = BorderStyle.None;
 
-        private readonly string historyFile;
-        private const int MaxHistoryCount = 100;
+        // --- Ensure AppData folder ---
+        var appData = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "PhoneManagerApp"
+        );
+        Directory.CreateDirectory(appData);
+        _historyFile = Path.Combine(appData, "command_history.txt");
 
-        public event EventHandler<string> CommandEntered;
-
-        private readonly Color TerminalBackground = Color.FromArgb(15, 15, 15);
-        private readonly Color TerminalTextColor = Color.Lime;
-        private readonly Color InputBackground = Color.FromArgb(35, 35, 35);
-        private readonly Color InputTextColor = Color.White;
-
-        public TerminalPanel()
+        // --- Output Box ---
+        _terminalOutput = new RichTextBox
         {
-            Dock = DockStyle.Bottom;
-            Height = 220;
-            BackColor = TerminalBackground;
-            BorderStyle = BorderStyle.None;
+            Dock = DockStyle.Fill,
+            ReadOnly = true,
+            Multiline = true,
+            BackColor = _terminalBackground,
+            ForeColor = _terminalTextColor,
+            Font = new Font("Consolas", 9.5f),
+            BorderStyle = BorderStyle.None,
+            ScrollBars = RichTextBoxScrollBars.Vertical
+        };
+        Controls.Add(_terminalOutput);
 
-            // --- Ensure AppData folder ---
-            string appData = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "PhoneManagerApp"
-            );
-            Directory.CreateDirectory(appData);
-            historyFile = Path.Combine(appData, "command_history.txt");
-
-            // --- Output Box ---
-            terminalOutput = new RichTextBox
-            {
-                Dock = DockStyle.Fill,
-                ReadOnly = true,
-                Multiline = true,
-                BackColor = TerminalBackground,
-                ForeColor = TerminalTextColor,
-                Font = new Font("Consolas", 9.5f),
-                BorderStyle = BorderStyle.None,
-                ScrollBars = RichTextBoxScrollBars.Vertical
-            };
-            Controls.Add(terminalOutput);
-
-            // --- Input Box ---
-            terminalInput = new TextBox
-            {
-                Dock = DockStyle.Bottom,
-                Height = 26,
-                BackColor = InputBackground,
-                ForeColor = InputTextColor,
-                Font = new Font("Consolas", 9.5f),
-                BorderStyle = BorderStyle.FixedSingle
-            };
-            terminalInput.KeyDown += TerminalInput_KeyDown;
-            terminalInput.PreviewKeyDown += TerminalInput_PreviewKeyDown;
-            Controls.Add(terminalInput);
-
-            LoadHistory();
-        }
-
-        // ===========================
-        // 🔧 Input Handling
-        // ===========================
-        private void TerminalInput_KeyDown(object sender, KeyEventArgs e)
+        // --- Input Box ---
+        _terminalInput = new TextBox
         {
-            if (e.KeyCode == Keys.Enter)
+            Dock = DockStyle.Bottom,
+            Height = 26,
+            BackColor = _inputBackground,
+            ForeColor = _inputTextColor,
+            Font = new Font("Consolas", 9.5f),
+            BorderStyle = BorderStyle.FixedSingle
+        };
+        _terminalInput.KeyDown += TerminalInput_KeyDown;
+        _terminalInput.PreviewKeyDown += TerminalInput_PreviewKeyDown;
+        Controls.Add(_terminalInput);
+
+        LoadHistory();
+    }
+
+    public event EventHandler<string> CommandEntered;
+
+    // ===========================
+    // 🔧 Input Handling
+    // ===========================
+    private void TerminalInput_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.KeyCode == Keys.Enter)
+        {
+            e.SuppressKeyPress = true;
+            var command = _terminalInput.Text.Trim();
+            _terminalInput.Clear();
+
+            if (string.IsNullOrWhiteSpace(command)) return;
+
+            if (command.Equals("clear", StringComparison.OrdinalIgnoreCase))
             {
-                e.SuppressKeyPress = true;
-                string command = terminalInput.Text.Trim();
-                terminalInput.Clear();
-
-                if (string.IsNullOrWhiteSpace(command)) return;
-
-                if (command.Equals("clear", StringComparison.OrdinalIgnoreCase))
-                {
-                    ClearOutput();
-                    return;
-                }
-
-                AppendOutput($"> {command}");
-                AddToHistory(command);
-                CommandEntered?.Invoke(this, command);
-                historyIndex = commandHistory.Count;
-                return;
-            }
-
-            if (e.Control && e.KeyCode == Keys.L)
-            {
-                e.SuppressKeyPress = true;
                 ClearOutput();
                 return;
             }
 
-            if (e.KeyCode == Keys.Up)
-            {
-                e.SuppressKeyPress = true;
-                NavigateHistory(-1);
-                return;
-            }
-
-            if (e.KeyCode == Keys.Down)
-            {
-                e.SuppressKeyPress = true;
-                NavigateHistory(1);
-                return;
-            }
-
-            if (e.KeyCode == Keys.Tab)
-            {
-                e.SuppressKeyPress = true;
-                AutoCompleteCommand();
-            }
+            AppendOutput($"> {command}");
+            AddToHistory(command);
+            CommandEntered?.Invoke(this, command);
+            _historyIndex = _commandHistory.Count;
+            return;
         }
-        private void TerminalInput_PreviewKeyDown(object sender, PreviewKeyDownEventArgs e)
+
+        if (e.Control && e.KeyCode == Keys.L)
         {
-            // Prevent Windows Forms from treating Tab as a focus key
-            if (e.KeyCode == Keys.Tab)
-                e.IsInputKey = true;
+            e.SuppressKeyPress = true;
+            ClearOutput();
+            return;
         }
-        
-        // ===========================
-        // 💾 History Management
-        // ===========================
-        private void LoadHistory()
+
+        if (e.KeyCode == Keys.Up)
         {
-            try
-            {
-                if (File.Exists(historyFile))
-                {
-                    var lines = File.ReadAllLines(historyFile);
-                    commandHistory.AddRange(lines.TakeLast(MaxHistoryCount));
-                }
-            }
-            catch (Exception ex)
-            {
-                AppendWarning($"Failed to load command history: {ex.Message}");
-            }
+            e.SuppressKeyPress = true;
+            NavigateHistory(-1);
+            return;
         }
 
-        private void AddToHistory(string command)
+        if (e.KeyCode == Keys.Down)
         {
-            if (commandHistory.Count == 0 || commandHistory.Last() != command)
-                commandHistory.Add(command);
-
-            if (commandHistory.Count > MaxHistoryCount)
-                commandHistory.RemoveAt(0);
-
-            try
-            {
-                File.WriteAllLines(historyFile, commandHistory);
-            }
-            catch (Exception ex)
-            {
-                AppendWarning($"Failed to save command history: {ex.Message}");
-            }
+            e.SuppressKeyPress = true;
+            NavigateHistory(1);
+            return;
         }
 
-        private void NavigateHistory(int direction)
+        if (e.KeyCode == Keys.Tab)
         {
-            if (commandHistory.Count == 0) return;
-
-            historyIndex += direction;
-
-            if (historyIndex < 0)
-                historyIndex = 0;
-            else if (historyIndex >= commandHistory.Count)
-            {
-                historyIndex = commandHistory.Count;
-                terminalInput.Clear();
-                return;
-            }
-
-            terminalInput.Text = commandHistory[historyIndex];
-            terminalInput.SelectionStart = terminalInput.Text.Length;
+            e.SuppressKeyPress = true;
+            AutoCompleteCommand();
         }
+    }
 
-        private void AutoCompleteCommand()
+    private void TerminalInput_PreviewKeyDown(object sender, PreviewKeyDownEventArgs e)
+    {
+        // Prevent Windows Forms from treating Tab as a focus key
+        if (e.KeyCode == Keys.Tab)
+            e.IsInputKey = true;
+    }
+
+    // ===========================
+    // 💾 History Management
+    // ===========================
+    private void LoadHistory()
+    {
+        try
         {
-            string current = terminalInput.Text.Trim();
-            if (string.IsNullOrWhiteSpace(current)) return;
-
-            // Look for the most recent command that starts with the current text
-            var match = commandHistory
-                .Where(c => c.StartsWith(current, StringComparison.OrdinalIgnoreCase))
-                .LastOrDefault();
-
-            // If no "starts with" match, try a "contains" match as fallback
-            if (match == null)
-                match = commandHistory.LastOrDefault(c => c.Contains(current, StringComparison.OrdinalIgnoreCase));
-
-            if (match != null)
+            if (File.Exists(_historyFile))
             {
-                terminalInput.Text = match;
-                terminalInput.SelectionStart = match.Length;
+                var lines = File.ReadAllLines(_historyFile);
+                _commandHistory.AddRange(lines.TakeLast(MaxHistoryCount));
             }
         }
-
-
-        // ===========================
-        // 🎨 Output Display
-        // ===========================
-        public void AppendOutput(string message) => AppendColoredLine(message, TerminalTextColor);
-        public void AppendInfo(string message) => AppendColoredLine(message, Color.Lime);
-        public void AppendWarning(string message) => AppendColoredLine($"⚠️ {message}", Color.Yellow);
-        public void AppendError(string message) => AppendColoredLine($"❌ {message}", Color.OrangeRed);
-
-        private void AppendColoredLine(string message, Color color)
+        catch (Exception ex)
         {
-            if (InvokeRequired)
-            {
-                Invoke(new Action(() => AppendColoredLine(message, color)));
-                return;
-            }
+            AppendWarning($"Failed to load command history: {ex.Message}");
+        }
+    }
 
-            terminalOutput.SelectionStart = terminalOutput.TextLength;
-            terminalOutput.SelectionColor = color;
-            terminalOutput.AppendText($"{message}\n");
-            terminalOutput.SelectionColor = TerminalTextColor;
-            terminalOutput.ScrollToCaret();
+    private void AddToHistory(string command)
+    {
+        if (_commandHistory.Count == 0 || _commandHistory.Last() != command)
+            _commandHistory.Add(command);
+
+        if (_commandHistory.Count > MaxHistoryCount)
+            _commandHistory.RemoveAt(0);
+
+        try
+        {
+            File.WriteAllLines(_historyFile, _commandHistory);
+        }
+        catch (Exception ex)
+        {
+            AppendWarning($"Failed to save command history: {ex.Message}");
+        }
+    }
+
+    private void NavigateHistory(int direction)
+    {
+        if (_commandHistory.Count == 0) return;
+
+        _historyIndex += direction;
+
+        if (_historyIndex < 0)
+        {
+            _historyIndex = 0;
+        }
+        else if (_historyIndex >= _commandHistory.Count)
+        {
+            _historyIndex = _commandHistory.Count;
+            _terminalInput.Clear();
+            return;
         }
 
-        // ===========================
-        // 🧹 Utility Methods
-        // ===========================
-        public void ClearOutput() => terminalOutput.Clear();
+        _terminalInput.Text = _commandHistory[_historyIndex];
+        _terminalInput.SelectionStart = _terminalInput.Text.Length;
+    }
 
-        public void ToggleVisibility() => Visible = !Visible;
+    private void AutoCompleteCommand()
+    {
+        var current = _terminalInput.Text.Trim();
+        if (string.IsNullOrWhiteSpace(current)) return;
 
-        public void FocusInput() => terminalInput.Focus();
-        
-        protected override bool IsInputKey(Keys keyData)
+        // Look for the most recent command that starts with the current text
+        var match = _commandHistory
+            .Where(c => c.StartsWith(current, StringComparison.OrdinalIgnoreCase))
+            .LastOrDefault();
+
+        // If no "starts with" match, try a "contains" match as fallback
+        if (match == null)
+            match = _commandHistory.LastOrDefault(c => c.Contains(current, StringComparison.OrdinalIgnoreCase));
+
+        if (match != null)
         {
-            // Allow the TextBox to capture the Tab key (and Arrow keys if needed)
-            if (keyData == Keys.Tab)
-                return true;
-
-            return base.IsInputKey(keyData);
+            _terminalInput.Text = match;
+            _terminalInput.SelectionStart = match.Length;
         }
+    }
+
+
+    // ===========================
+    // 🎨 Output Display
+    // ===========================
+    public void AppendOutput(string message)
+    {
+        AppendColoredLine(message, _terminalTextColor);
+    }
+
+    public void AppendInfo(string message)
+    {
+        AppendColoredLine(message, Color.Lime);
+    }
+
+    public void AppendWarning(string message)
+    {
+        AppendColoredLine($"⚠️ {message}", Color.Yellow);
+    }
+
+    public void AppendError(string message)
+    {
+        AppendColoredLine($"❌ {message}", Color.OrangeRed);
+    }
+
+    private void AppendColoredLine(string message, Color color)
+    {
+        if (InvokeRequired)
+        {
+            Invoke(() => AppendColoredLine(message, color));
+            return;
+        }
+
+        _terminalOutput.SelectionStart = _terminalOutput.TextLength;
+        _terminalOutput.SelectionColor = color;
+        _terminalOutput.AppendText($"{message}\n");
+        _terminalOutput.SelectionColor = _terminalTextColor;
+        _terminalOutput.ScrollToCaret();
+    }
+
+    // ===========================
+    // 🧹 Utility Methods
+    // ===========================
+    public void ClearOutput()
+    {
+        _terminalOutput.Clear();
+    }
+
+    public void ToggleVisibility()
+    {
+        Visible = !Visible;
+    }
+
+    public void FocusInput()
+    {
+        _terminalInput.Focus();
+    }
+
+    protected override bool IsInputKey(Keys keyData)
+    {
+        // Allow the TextBox to capture the Tab key (and Arrow keys if needed)
+        if (keyData == Keys.Tab)
+            return true;
+
+        return base.IsInputKey(keyData);
     }
 }

@@ -1,87 +1,84 @@
-﻿using System;
-using System.Windows.Forms;
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 
-namespace PhoneManagerApp
+namespace PhoneManagerApp;
+
+/// <summary>
+///     Custom TextBox that wraps text automatically, keeps it bottom-aligned,
+///     and only scrolls vertically. Perfect for console-style input.
+/// </summary>
+public class BottomAlignedTextBox : TextBox
 {
-    /// <summary>
-    /// Custom TextBox that wraps text automatically, keeps it bottom-aligned,
-    /// and only scrolls vertically. Perfect for console-style input.
-    /// </summary>
-    public class BottomAlignedTextBox : TextBox
+    private const int EmGetrect = 0xB2;
+    private const int EmSetrect = 0xB3;
+    private const int TextBottomOffset = 4; // Adjust vertical offset
+
+    public BottomAlignedTextBox()
     {
-        private const int EM_GETRECT = 0xB2;
-        private const int EM_SETRECT = 0xB3;
-        private const int TextBottomOffset = 4; // Adjust vertical offset
+        Multiline = true;
+        WordWrap = true; // ✅ force wrapping (no horizontal scroll)
+        ScrollBars = ScrollBars.Vertical; // ✅ vertical scroll only
+        AcceptsReturn = true;
+        AcceptsTab = false;
+        BorderStyle = BorderStyle.None;
+        ShortcutsEnabled = true; // allow copy/paste
+        AutoSize = false; // stops height from resetting
+    }
 
-        [StructLayout(LayoutKind.Sequential)]
-        private struct RECT
-        {
-            public int Left, Top, Right, Bottom;
-        }
+    [DllImport("user32.dll")]
+    private static extern int SendMessage(IntPtr hWnd, int msg, int wParam, ref Rect rect);
 
-        [DllImport("user32.dll")]
-        private static extern int SendMessage(IntPtr hWnd, int msg, int wParam, ref RECT rect);
+    protected override void OnCreateControl()
+    {
+        base.OnCreateControl();
+        AdjustTextRect();
+    }
 
-        public BottomAlignedTextBox()
-        {
-            Multiline = true;
-            WordWrap = true;                   // ✅ force wrapping (no horizontal scroll)
-            ScrollBars = ScrollBars.Vertical;  // ✅ vertical scroll only
-            AcceptsReturn = true;
-            AcceptsTab = false;
-            BorderStyle = BorderStyle.None;
-            ShortcutsEnabled = true;           // allow copy/paste
-            AutoSize = false;                  // stops height from resetting
-        }
+    protected override void OnSizeChanged(EventArgs e)
+    {
+        base.OnSizeChanged(e);
+        AdjustTextRect();
+    }
 
-        protected override void OnCreateControl()
-        {
-            base.OnCreateControl();
-            AdjustTextRect();
-        }
+    protected override void OnFontChanged(EventArgs e)
+    {
+        base.OnFontChanged(e);
+        AdjustTextRect();
+    }
 
-        protected override void OnSizeChanged(EventArgs e)
-        {
-            base.OnSizeChanged(e);
-            AdjustTextRect();
-        }
+    protected override void OnTextChanged(EventArgs e)
+    {
+        base.OnTextChanged(e);
+        Invalidate();
 
-        protected override void OnFontChanged(EventArgs e)
-        {
-            base.OnFontChanged(e);
-            AdjustTextRect();
-        }
+        // Keep caret visible as you type
+        SelectionStart = Text.Length;
+        ScrollToCaret();
+    }
 
-        protected override void OnTextChanged(EventArgs e)
-        {
-            base.OnTextChanged(e);
-            Invalidate();
+    /// <summary>
+    ///     Adjusts text area to stay visually aligned near the bottom.
+    /// </summary>
+    private void AdjustTextRect()
+    {
+        if (!IsHandleCreated) return;
 
-            // Keep caret visible as you type
-            SelectionStart = Text.Length;
-            ScrollToCaret();
-        }
+        var rect = new Rect();
+        SendMessage(Handle, EmGetrect, 0, ref rect);
 
-        /// <summary>
-        /// Adjusts text area to stay visually aligned near the bottom.
-        /// </summary>
-        private void AdjustTextRect()
-        {
-            if (!IsHandleCreated) return;
+        var lineHeight = (int)Font.GetHeight();
 
-            RECT rect = new RECT();
-            SendMessage(Handle, EM_GETRECT, 0, ref rect);
+        rect.Left = 2;
+        rect.Right = ClientSize.Width - 2;
+        rect.Top = Math.Max(2, ClientSize.Height - (int)(lineHeight * 1.2) - TextBottomOffset);
+        rect.Bottom = ClientSize.Height - 2;
 
-            int lineHeight = (int)Font.GetHeight();
+        SendMessage(Handle, EmSetrect, 0, ref rect);
+        Invalidate();
+    }
 
-            rect.Left = 2;
-            rect.Right = ClientSize.Width - 2;
-            rect.Top = Math.Max(2, ClientSize.Height - (int)(lineHeight * 1.2) - TextBottomOffset);
-            rect.Bottom = ClientSize.Height - 2;
-
-            SendMessage(Handle, EM_SETRECT, 0, ref rect);
-            Invalidate();
-        }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Rect
+    {
+        public int Left, Top, Right, Bottom;
     }
 }

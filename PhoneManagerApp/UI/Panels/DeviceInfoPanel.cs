@@ -1,251 +1,235 @@
-﻿using System;
-using System.Drawing;
-using System.Linq;
+﻿using System.Text;
 using System.Text.RegularExpressions;
-using System.Windows.Forms;
-using System.Collections.Generic;
-using System.Text;
+using Timer = System.Windows.Forms.Timer;
 
-namespace PhoneManagerApp
+namespace PhoneManagerApp.UI.Panels;
+
+public class DeviceInfoPanel : FlowLayoutPanel
 {
-    public class DeviceInfoPanel : FlowLayoutPanel
+    private Timer _expandTimer;
+
+    private Dictionary<string, double> _lastStorageStats = new();
+    private double _lastTotalGb;
+    private DateTime _lastUpdatedTime = DateTime.MinValue;
+    private double _lastUsedGb;
+    private int _lastUsedPercent;
+
+    private Label _lblBattery;
+    private Label _lblDeviceName;
+    private Label _lblIpAddress;
+    private Label _lblLastUpdate;
+    private Label _lblStorage;
+    private Label _lblStorageDetails;
+    private Label _lblWifi;
+
+    private bool _storageExpanded;
+    private int _targetHeight;
+
+    public DeviceInfoPanel()
     {
-        private Label lblDeviceName;
-        private Label lblIpAddress;
-        private Label lblBattery;
-        private Label lblWifi;
-        private Label lblStorage;
-        private Label lblLastUpdate;
-        private Label lblStorageDetails;
+        Dock = DockStyle.Fill;
+        AutoScroll = true;
+        BackColor = Color.White;
+        Padding = new Padding(20, 8, 20, 8);
+        FlowDirection = FlowDirection.TopDown;
+        WrapContents = false;
 
-        private bool storageExpanded = false;
-        private int targetHeight = 0;
-        private System.Windows.Forms.Timer expandTimer;
+        InitializeLabels();
+        InitializeExpandAnimation();
+    }
 
-        public DeviceInfoPanel()
+    private void InitializeLabels()
+    {
+        _lblDeviceName = CreateLabel("Device:");
+        _lblIpAddress = CreateLabel("IP Address:");
+        _lblBattery = CreateLabel("Battery:");
+        _lblWifi = CreateLabel("Wi-Fi Signal:");
+        _lblStorage = CreateLabel("Storage:");
+        _lblLastUpdate = CreateLabel("Last Update:");
+
+        _lblStorage.Cursor = Cursors.Hand;
+        _lblStorage.Click += ToggleStorageExpanded;
+
+        _lblStorageDetails = new Label
         {
-            Dock = DockStyle.Fill;
-            AutoScroll = true;
-            BackColor = Color.White;
-            Padding = new Padding(20, 8, 20, 8);
-            FlowDirection = FlowDirection.TopDown;
-            WrapContents = false;
+            AutoSize = false,
+            Font = new Font("Consolas", 9, FontStyle.Regular),
+            ForeColor = Color.Black,
+            Height = 0,
+            Width = 280,
+            Visible = false,
+            Margin = new Padding(25, 0, 0, 4)
+        };
 
-            InitializeLabels();
-            InitializeExpandAnimation();
+        Controls.AddRange(new Control[]
+        {
+            _lblDeviceName,
+            _lblIpAddress,
+            _lblBattery,
+            _lblWifi,
+            _lblStorage,
+            _lblStorageDetails,
+            _lblLastUpdate
+        });
+    }
+
+    private Label CreateLabel(string title)
+    {
+        return new Label
+        {
+            Text = $"{title} —",
+            AutoSize = true,
+            Font = new Font("Segoe UI", 10, FontStyle.Regular),
+            ForeColor = Color.Black,
+            Margin = new Padding(0, 4, 0, 4)
+        };
+    }
+
+    private void InitializeExpandAnimation()
+    {
+        _expandTimer = new Timer { Interval = 15 };
+        _expandTimer.Tick += ExpandTimer_Tick;
+    }
+
+    private void ToggleStorageExpanded(object sender, EventArgs e)
+    {
+        _storageExpanded = !_storageExpanded;
+        _lblStorageDetails.Visible = true;
+
+        var text = _lblStorage.Text.Replace("▸", "").Replace("▾", "").Trim();
+        _lblStorage.Text = $"{text} {(_storageExpanded ? "▾" : "▸")}";
+
+        _targetHeight = _storageExpanded ? 100 : 0;
+        _expandTimer.Start();
+    }
+
+    private void ExpandTimer_Tick(object sender, EventArgs e)
+    {
+        var step = 10;
+        if (_storageExpanded)
+        {
+            if (_lblStorageDetails.Height < _targetHeight)
+                _lblStorageDetails.Height += step;
+            else
+                _expandTimer.Stop();
         }
-
-        private void InitializeLabels()
+        else
         {
-            lblDeviceName = CreateLabel("Device:");
-            lblIpAddress = CreateLabel("IP Address:");
-            lblBattery = CreateLabel("Battery:");
-            lblWifi = CreateLabel("Wi-Fi Signal:");
-            lblStorage = CreateLabel("Storage:");
-            lblLastUpdate = CreateLabel("Last Update:");
-
-            lblStorage.Cursor = Cursors.Hand;
-            lblStorage.Click += ToggleStorageExpanded;
-
-            lblStorageDetails = new Label
-            {
-                AutoSize = false,
-                Font = new Font("Consolas", 9, FontStyle.Regular),
-                ForeColor = Color.Black,
-                Height = 0,
-                Width = 280,
-                Visible = false,
-                Margin = new Padding(25, 0, 0, 4)
-            };
-
-            Controls.AddRange(new Control[]
-            {
-                lblDeviceName,
-                lblIpAddress,
-                lblBattery,
-                lblWifi,
-                lblStorage,
-                lblStorageDetails,
-                lblLastUpdate
-            });
-        }
-
-        private Label CreateLabel(string title)
-        {
-            return new Label
-            {
-                Text = $"{title} —",
-                AutoSize = true,
-                Font = new Font("Segoe UI", 10, FontStyle.Regular),
-                ForeColor = Color.Black,
-                Margin = new Padding(0, 4, 0, 4)
-            };
-        }
-
-        private void InitializeExpandAnimation()
-        {
-            expandTimer = new System.Windows.Forms.Timer { Interval = 15 };
-            expandTimer.Tick += ExpandTimer_Tick;
-        }
-
-        private void ToggleStorageExpanded(object sender, EventArgs e)
-        {
-            storageExpanded = !storageExpanded;
-            lblStorageDetails.Visible = true;
-
-            string text = lblStorage.Text.Replace("▸", "").Replace("▾", "").Trim();
-            lblStorage.Text = $"{text} {(storageExpanded ? "▾" : "▸")}";
-
-            targetHeight = storageExpanded ? 100 : 0;
-            expandTimer.Start();
-        }
-
-        private void ExpandTimer_Tick(object sender, EventArgs e)
-        {
-            int step = 10;
-            if (storageExpanded)
-            {
-                if (lblStorageDetails.Height < targetHeight)
-                    lblStorageDetails.Height += step;
-                else
-                    expandTimer.Stop();
-            }
+            if (_lblStorageDetails.Height > _targetHeight)
+                _lblStorageDetails.Height -= step;
             else
             {
-                if (lblStorageDetails.Height > targetHeight)
-                    lblStorageDetails.Height -= step;
-                else
-                {
-                    lblStorageDetails.Visible = false;
-                    expandTimer.Stop();
-                }
+                _lblStorageDetails.Visible = false;
+                _expandTimer.Stop();
             }
         }
+    }
 
-        public void UpdateDeviceInfo(string device, string ip, string battery, string wifi, string storage)
+    // ==========================================================
+    // 🛰️ Display Device Info
+    // ==========================================================
+    public void UpdateDeviceInfo(string device, string ip, string battery, string wifi, string storage, string? extraIp = null)
+    {
+        _lblDeviceName.Text = $"Device: {device}";
+
+        var ipText = new StringBuilder();
+        ipText.AppendLine($"IP Address: {ip}");
+        if (!string.IsNullOrEmpty(extraIp) && extraIp != "—")
         {
-            lblDeviceName.Text = $"Device: {device}";
-            lblIpAddress.Text = $"IP Address: {ip}";
-            lblBattery.Text = $"Battery: {battery}";
-            lblWifi.Text = $"Wi-Fi Signal: {wifi}";
-
-            // Color based on strength keywords
-            if (wifi.Contains("Excellent"))
-                lblWifi.ForeColor = Color.Green;
-            else if (wifi.Contains("Good"))
-                lblWifi.ForeColor = Color.LimeGreen;
-            else if (wifi.Contains("Fair"))
-                lblWifi.ForeColor = Color.DarkOrange;
-            else if (wifi.Contains("Weak"))
-                lblWifi.ForeColor = Color.Red;
-            else
-                lblWifi.ForeColor = Color.Gray;
-            lblStorage.Text = $"Storage: {storage}";
-            lblLastUpdate.Text = $"Last Update: {DateTime.Now:T}";
+            ipText.AppendLine($"Tailscale:  {extraIp}");
         }
+        _lblIpAddress.Text = ipText.ToString();
 
-        // Add this at the top of your DeviceInfoPanel class:
-        private Dictionary<string, double> lastStorageStats = new Dictionary<string, double>();
-        private int lastUsedPercent = 0;
-        private double lastUsedGB = 0;
-        private double lastTotalGB = 0;
-        private DateTime lastUpdatedTime = DateTime.MinValue;
+        _lblBattery.Text = $"Battery: {battery}";
+        _lblWifi.Text = $"Wi-Fi Signal: {wifi}";
 
-        public void UpdateStorageBreakdown(string raw)
+        // Color code Wi-Fi strength
+        if (wifi.Contains("Excellent"))
+            _lblWifi.ForeColor = Color.Green;
+        else if (wifi.Contains("Good"))
+            _lblWifi.ForeColor = Color.LimeGreen;
+        else if (wifi.Contains("Fair"))
+            _lblWifi.ForeColor = Color.DarkOrange;
+        else if (wifi.Contains("Weak"))
+            _lblWifi.ForeColor = Color.Red;
+        else
+            _lblWifi.ForeColor = Color.Gray;
+
+        _lblStorage.Text = $"Storage: {storage}";
+        _lblLastUpdate.Text = $"Last Update: {DateTime.Now:T}";
+    }
+
+    // ==========================================================
+    // 💾 Storage Breakdown (unchanged)
+    // ==========================================================
+    public void UpdateStorageBreakdown(string raw)
+    {
+        try
         {
-            try
+            if (string.IsNullOrWhiteSpace(raw))
             {
-                if (string.IsNullOrWhiteSpace(raw))
-                {
-                    lblStorageDetails.Text = "⚠ No storage data available.";
-                    return;
-                }
-
-                // Try parsing new stats
-                var matches = Regex.Matches(raw, @"(\w+)\s+Size:\s+(\d+)", RegexOptions.IgnoreCase);
-                if (matches.Count == 0)
-                {
-                    lblStorageDetails.Text = "⚠ No detailed stats found in output.";
-                    return;
-                }
-
-                var newStats = matches
-                    .Cast<Match>()
-                    .ToDictionary(
-                        m => m.Groups[1].Value.Trim(),
-                        m => double.Parse(m.Groups[2].Value) / 1_000_000_000 // Convert bytes to GB
-                    );
-
-                // Totals from the Data-Free line
-                var dataLine = Regex.Match(raw, @"Data-Free:\s+(\d+)K\s+/\s+(\d+)K");
-                double freeGB = 0, totalGB = 0;
-                if (dataLine.Success)
-                {
-                    double freeK = double.Parse(dataLine.Groups[1].Value);
-                    double totalK = double.Parse(dataLine.Groups[2].Value);
-                    freeGB = freeK / 1024 / 1024;
-                    totalGB = totalK / 1024 / 1024;
-                }
-
-                double usedGB = totalGB - freeGB;
-                int usedPercent = totalGB > 0 ? (int)((usedGB / totalGB) * 100) : 0;
-
-                // Cache successful result
-                lastStorageStats = newStats;
-                lastUsedPercent = usedPercent;
-                lastUsedGB = usedGB;
-                lastTotalGB = totalGB;
-                lastUpdatedTime = DateTime.Now;
-
-                // Apply colors
-                lblStorage.ForeColor = usedPercent >= 90 ? Color.Red :
-                    usedPercent >= 70 ? Color.DarkOrange :
-                    Color.Green;
-
-                lblStorage.Text =
-                    $"Storage: {usedPercent}% used (Used: {usedGB:F1} GB / Total: {totalGB:F1} GB) {(storageExpanded ? "▾" : "▸")}";
-
-                // Build detail list
-                var sb = new StringBuilder();
-                sb.AppendLine($"Apps:      {GetGB("App", newStats):F2} GB");
-                sb.AppendLine($"Photos:    {GetGB("Photos", newStats):F2} GB");
-                sb.AppendLine($"Videos:    {GetGB("Videos", newStats):F2} GB");
-                sb.AppendLine($"Audio:     {GetGB("Audio", newStats):F2} GB");
-                sb.AppendLine($"Downloads: {GetGB("Downloads", newStats):F2} GB");
-                sb.AppendLine($"System:    {GetGB("System", newStats):F2} GB");
-                sb.AppendLine($"Other:     {GetGB("Other", newStats):F2} GB");
-                sb.AppendLine($"Free:      {freeGB:F2} GB");
-
-                lblStorageDetails.Text = sb.ToString();
+                _lblStorageDetails.Text = "⚠ No storage data available.";
+                return;
             }
-            catch (Exception ex)
+
+            var matches = Regex.Matches(raw, @"(\w+)\s+Size:\s+(\d+)", RegexOptions.IgnoreCase);
+            if (matches.Count == 0)
             {
-                // If parsing failed, fallback to cached data
-                if (lastStorageStats?.Count > 0)
-                {
-                    lblStorage.ForeColor = lastUsedPercent >= 90 ? Color.Red :
-                        lastUsedPercent >= 70 ? Color.DarkOrange :
-                        Color.Green;
-
-                    lblStorage.Text =
-                        $"Storage: {lastUsedPercent}% used (Used: {lastUsedGB:F1} GB / Total: {lastTotalGB:F1} GB) {(storageExpanded ? "▾" : "▸")}";
-
-                    var sb = new StringBuilder();
-                    foreach (var kvp in lastStorageStats)
-                        sb.AppendLine($"{kvp.Key,-10}: {kvp.Value:F2} GB");
-
-                    lblStorageDetails.Text = sb.ToString();
-                }
-                else
-                {
-                    lblStorageDetails.Text = $"⚠ Failed to parse storage info: {ex.Message}";
-                }
+                _lblStorageDetails.Text = "⚠ No detailed stats found in output.";
+                return;
             }
-        }
 
-        private double GetGB(string key, Dictionary<string, double> stats)
-        {
-            return stats.TryGetValue(key, out double val) ? val : 0;
+            var newStats = matches.ToDictionary(
+                m => m.Groups[1].Value.Trim(),
+                m => double.Parse(m.Groups[2].Value) / 1_000_000_000
+            );
+
+            var dataLine = Regex.Match(raw, @"Data-Free:\s+(\d+)K\s+/\s+(\d+)K");
+            double freeGb = 0, totalGb = 0;
+            if (dataLine.Success)
+            {
+                var freeK = double.Parse(dataLine.Groups[1].Value);
+                var totalK = double.Parse(dataLine.Groups[2].Value);
+                freeGb = freeK / 1024 / 1024;
+                totalGb = totalK / 1024 / 1024;
+            }
+
+            var usedGb = totalGb - freeGb;
+            var usedPercent = totalGb > 0 ? (int)(usedGb / totalGb * 100) : 0;
+
+            _lastStorageStats = newStats;
+            _lastUsedPercent = usedPercent;
+            _lastUsedGb = usedGb;
+            _lastTotalGb = totalGb;
+            _lastUpdatedTime = DateTime.Now;
+
+            _lblStorage.ForeColor = usedPercent >= 90 ? Color.Red :
+                usedPercent >= 70 ? Color.DarkOrange :
+                Color.Green;
+
+            _lblStorage.Text =
+                $"Storage: {usedPercent}% used (Used: {usedGb:F1} GB / Total: {totalGb:F1} GB) {(_storageExpanded ? "▾" : "▸")}";
+
+            var sb = new StringBuilder();
+            sb.AppendLine($"Apps:      {GetGb("App", newStats):F2} GB");
+            sb.AppendLine($"Photos:    {GetGb("Photos", newStats):F2} GB");
+            sb.AppendLine($"Videos:    {GetGb("Videos", newStats):F2} GB");
+            sb.AppendLine($"Audio:     {GetGb("Audio", newStats):F2} GB");
+            sb.AppendLine($"Downloads: {GetGb("Downloads", newStats):F2} GB");
+            sb.AppendLine($"System:    {GetGb("System", newStats):F2} GB");
+            sb.AppendLine($"Other:     {GetGb("Other", newStats):F2} GB");
+            sb.AppendLine($"Free:      {freeGb:F2} GB");
+
+            _lblStorageDetails.Text = sb.ToString();
         }
+        catch (Exception ex)
+        {
+            _lblStorageDetails.Text = $"⚠ Error: {ex.Message}";
+        }
+    }
+
+    private double GetGb(string key, Dictionary<string, double> stats)
+    {
+        return stats.TryGetValue(key, out var val) ? val : 0;
     }
 }

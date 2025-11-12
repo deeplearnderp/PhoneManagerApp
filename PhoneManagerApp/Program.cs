@@ -1,20 +1,18 @@
-using System;
-using System.Windows.Forms;
+using PhoneManagerApp.UI;
 
-namespace PhoneManagerApp
+namespace PhoneManagerApp;
+
+internal static class Program
 {
-    internal static class Program
+    /// <summary>
+    ///     The main entry point for the application.
+    /// </summary>
+    [STAThread]
+    private static void Main()
     {
-        /// <summary>
-        ///  The main entry point for the application.
-        /// </summary>
-        [STAThread]
-        static void Main()
-        {
-            ApplicationConfiguration.Initialize();
+        ApplicationConfiguration.Initialize();
 
-            // 🚀 Launch the new modular main window
-            Application.Run(new MainWindow());
-        }
+        // 🚀 Launch the new modular main window
+        Application.Run(new MainWindow());
     }
 }
