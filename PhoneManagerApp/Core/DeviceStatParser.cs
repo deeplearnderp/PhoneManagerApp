@@ -1,17 +1,17 @@
 ﻿using System;
-using System.Linq;
 using System.Text.RegularExpressions;
 
 namespace PhoneManagerApp.Core
 {
     public static class DeviceStatParser
     {
+        // ✅ Updated Regex to match proper level only
         public static string ParseBattery(string text)
         {
             if (string.IsNullOrWhiteSpace(text))
                 return "—";
 
-            var match = Regex.Match(text, @"level[:=]\s*(\d+)%?");
+            var match = Regex.Match(text, @"level[:=]\s*(\d{1,3})\b", RegexOptions.Multiline);
             return match.Success ? $"{match.Groups[1].Value}%" : "—";
         }
 
@@ -36,7 +36,6 @@ namespace PhoneManagerApp.Core
             string sdPercent = GetMountUsage(text, "/sdcard");
             string emulatedPercent = GetMountUsage(text, "/storage/emulated/0");
 
-            // Choose best available
             if (emulatedPercent != "—")
                 internalPercent = emulatedPercent;
 
@@ -59,20 +58,12 @@ namespace PhoneManagerApp.Core
             {
                 if (line.Contains(mount, StringComparison.OrdinalIgnoreCase))
                 {
-                    // Typical line format: /dev/block/...  29G  26G  3G  90% /data
                     var match = Regex.Match(line, @"(\d+)%");
                     if (match.Success)
                         return $"{match.Groups[1].Value}%";
                 }
             }
             return "—";
-        }
-
-        public static int ExtractPercentValue(string percentText)
-        {
-            if (int.TryParse(percentText.Replace("%", "").Trim(), out int val))
-                return val;
-            return -1;
         }
 
         private static string GetSignalBars(int rssi)
@@ -83,11 +74,7 @@ namespace PhoneManagerApp.Core
             if (rssi >= -80) return "📶 Weak";
             return "❌ No signal";
         }
-        
-        public static string ParseTimestamp()
-        {
-            return DateTime.Now.ToString("h:mm:ss tt");
-        }
 
+        public static string ParseTimestamp() => DateTime.Now.ToString("h:mm:ss tt");
     }
 }

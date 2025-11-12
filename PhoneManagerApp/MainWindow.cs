@@ -6,13 +6,11 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using PhoneManagerApp.Core;
 using SharpAdbClient;
-using Timer = System.Windows.Forms.Timer;
+using System.Linq;
+using System.Text.RegularExpressions;
 
 namespace PhoneManagerApp
 {
-    /// <summary>
-    /// Main application window that manages ADB connections and UI synchronization.
-    /// </summary>
     public class MainWindow : Form
     {
         private ToolbarPanel toolbar;
@@ -23,8 +21,8 @@ namespace PhoneManagerApp
         private AdbConnector adbConnector;
         private Process adbShellProcess;
 
-        private Timer autoRefreshTimer;
-        private Timer autoRefreshPulseTimer;
+        private System.Windows.Forms.Timer autoRefreshTimer;
+        private System.Windows.Forms.Timer autoRefreshPulseTimer;
 
         private bool autoRefreshEnabled = true;
         private bool autoRefreshPulseVisible = true;
@@ -50,25 +48,18 @@ namespace PhoneManagerApp
         // ================================
         private void InitializeLayout()
         {
-            // Toolbar (top)
-            toolbar = new ToolbarPanel
-            {
-                Dock = DockStyle.Top,
-                Height = 36
-            };
+            toolbar = new ToolbarPanel { Dock = DockStyle.Top, Height = 36 };
             toolbar.ConnectPhoneClicked += async (_, _) => await ConnectPhoneAsync();
             toolbar.ToggleNotificationsClicked += async (_, _) => await ToggleNotificationsAsync();
             toolbar.ToggleTerminalClicked += (_, _) => terminal.ToggleVisibility();
             toolbar.ClearOutputClicked += (_, _) => terminal.ClearOutput();
 
-            // Device Info (center)
             deviceInfoPanel = new DeviceInfoPanel
             {
                 Dock = DockStyle.Fill,
                 BackColor = Color.White
             };
 
-            // Terminal (bottom)
             terminal = new TerminalPanel
             {
                 Dock = DockStyle.Bottom,
@@ -76,7 +67,6 @@ namespace PhoneManagerApp
             };
             terminal.CommandEntered += async (_, cmd) => await ExecuteTerminalCommandAsync(cmd);
 
-            // Status Bar (footer)
             statusBar = new StatusBarPanel
             {
                 Dock = DockStyle.Bottom,
@@ -99,13 +89,11 @@ namespace PhoneManagerApp
 
         private void InitializeTimers()
         {
-            // Auto-refresh timer
-            autoRefreshTimer = new Timer { Interval = AutoRefreshInterval };
+            autoRefreshTimer = new System.Windows.Forms.Timer { Interval = AutoRefreshInterval };
             autoRefreshTimer.Tick += async (_, _) => await RefreshDeviceStatsAsync();
             autoRefreshTimer.Start();
 
-            // Pulse animation timer
-            autoRefreshPulseTimer = new Timer { Interval = 600 };
+            autoRefreshPulseTimer = new System.Windows.Forms.Timer { Interval = 600 };
             autoRefreshPulseTimer.Tick += AutoRefreshPulse_Tick;
             autoRefreshPulseTimer.Start();
         }
@@ -125,7 +113,6 @@ namespace PhoneManagerApp
                     string serial = adbConnector.GetConnectedDevice()?.Serial ?? "Unknown";
                     statusBar.SetConnectionStatus(true, serial);
                     terminal.AppendOutput("✅ Connected successfully.");
-
                     StartPersistentAdbShell();
                     await RefreshDeviceStatsAsync();
                 }
@@ -185,23 +172,29 @@ namespace PhoneManagerApp
             {
                 var client = new AdbClient();
                 var device = adbConnector.GetConnectedDevice();
-                var receiver = new ConsoleOutputReceiver();
+                if (device == null) return;
 
-                await Task.Run(() =>
-                {
-                    client.ExecuteRemoteCommand("dumpsys battery | grep level", device, receiver);
-                    client.ExecuteRemoteCommand("dumpsys wifi | grep RSSI", device, receiver);
-                    client.ExecuteRemoteCommand("df /data /sdcard | grep /data", device, receiver);
-                });
-
-                // Simulated stats (placeholder parsing)
-                deviceInfoPanel.UpdateDeviceInfo(
-                    device.Model ?? "Unknown",
-                    device.Serial ?? "—",
-                    "91%",
-                    "—"
+                // ========== Collect all data ==========
+                string batteryRaw = await ExecuteAdbCommandAsync(client, device, "dumpsys battery | grep level");
+                string wifiRaw = await ExecuteAdbCommandAsync(client, device, "dumpsys wifi | grep RSSI");
+                string storageRaw = await ExecuteAdbCommandAsync(client, device,
+                    "df /data /storage/emulated/0 | grep -E '/data|/storage/emulated/0'");
+                string diskStatsRaw = await ExecuteAdbCommandAsync(client, device,
+                    "dumpsys diskstats"
                 );
+                deviceInfoPanel.UpdateStorageBreakdown(diskStatsRaw);
 
+                // ========== Parse ==========
+                string batteryLevel = ParseBatteryLevel(batteryRaw);
+                string wifiSignal = ParseWifiSignal(wifiRaw);
+                string storageUsage = ParseStorageUsage(storageRaw);
+
+                // ========== Update UI ==========
+                deviceInfoPanel.UpdateStorageBreakdown(diskStatsRaw);
+                deviceInfoPanel.UpdateDeviceInfo(device.Model ?? "Unknown", device.Serial ?? "—",
+                    batteryLevel, wifiSignal, storageUsage);
+
+                UpdateDeviceDropdown(device.Model, storageUsage);
                 statusBar.SetLastUpdated(DateTime.Now);
             }
             catch (Exception ex)
@@ -210,15 +203,49 @@ namespace PhoneManagerApp
             }
         }
 
+        private async Task<string> ExecuteAdbCommandAsync(AdbClient client, DeviceData device, string command)
+        {
+            var receiver = new ConsoleOutputReceiver();
+            await Task.Run(() => client.ExecuteRemoteCommand(command, device, receiver));
+            return receiver.ToString().Trim();
+        }
+
+        // ================================
+        // 🧮 Parsing Helpers
+        // ================================
+        private string ParseBatteryLevel(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return "—";
+            var match = Regex.Match(raw, @"level[:=]\s*(\d+)", RegexOptions.IgnoreCase);
+            return match.Success ? $"{match.Groups[1].Value}%" : "—";
+        }
+
+        private string ParseWifiSignal(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return "—";
+            var match = Regex.Match(raw, @"RSSI[:=]\s*(-?\d+)", RegexOptions.IgnoreCase);
+            return match.Success ? $"{match.Groups[1].Value} dBm" : "—";
+        }
+
+        private string ParseStorageUsage(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return "—";
+            var match = Regex.Match(raw, @"(\d+)%", RegexOptions.Multiline);
+            return match.Success ? $"{match.Groups[1].Value}% used" : "—";
+        }
+
+        private void UpdateDeviceDropdown(string deviceName, string storageUsage)
+        {
+            toolbar.ComboDevices.Items.Clear();
+            toolbar.ComboDevices.Items.Add($"{deviceName} — {storageUsage}");
+            toolbar.ComboDevices.SelectedIndex = 0;
+        }
+
         private void AutoRefreshPulse_Tick(object sender, EventArgs e)
         {
-            // Pulse between Lime and Green for Auto-Refresh label text
             autoRefreshPulseVisible = !autoRefreshPulseVisible;
             var color = autoRefreshPulseVisible ? Color.Lime : Color.Green;
-            statusBar.Invoke(new Action(() =>
-            {
-                statusBar.ForeColor = color;
-            }));
+            statusBar.Invoke(new Action(() => statusBar.ForeColor = color));
         }
 
         // ================================
