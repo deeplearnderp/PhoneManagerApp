@@ -13,6 +13,8 @@ public class DeviceInfo
 
     // 📱 Battery
     public string BatteryLevel { get; set; } = "—";
+    public bool IsCharging { get; set; }
+
 
     // 📶 Wi-Fi
     public string WifiSignal { get; set; } = "—";

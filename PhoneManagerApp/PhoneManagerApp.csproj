@@ -21,6 +21,17 @@
         <Compile Remove="Legacy\**\*.cs"/>
         <None Include="Legacy\**\*.cs"/>
     </ItemGroup>
+    <ItemGroup>
+      <Folder Include="Resources\" />
+    </ItemGroup>
+    <ItemGroup>
+      <None Remove="Resources\device.png" />
+      <EmbeddedResource Include="Resources\device.png" />
+      <None Remove="Resources\notification.png" />
+      <EmbeddedResource Include="Resources\notification.png" />
+      <None Remove="Resources\charging.png" />
+      <EmbeddedResource Include="Resources\charging.png" />
+    </ItemGroup>
 
     <!-- Optional: If you later move it under Core, you can re-enable this -->
     <!-- <ItemGroup>

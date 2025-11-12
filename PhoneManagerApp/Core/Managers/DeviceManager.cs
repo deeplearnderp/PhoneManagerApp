@@ -35,7 +35,7 @@ public class DeviceManager
             if (device == null) return null;
 
             // Run ADB commands
-            var batteryRaw = await ExecuteAdbCommandAsync(client, device, "dumpsys battery | grep level");
+            var batteryRaw = await ExecuteAdbCommandAsync(client, device, "dumpsys battery");
             var wifiRaw = await ExecuteAdbCommandAsync(client, device, "dumpsys wifi | grep RSSI");
             var storageRaw = await ExecuteAdbCommandAsync(client, device,
                 "df /data /storage/emulated/0 | grep -E '/data|/storage/emulated/0'");
@@ -44,6 +44,12 @@ public class DeviceManager
             // Get both IPs
             var (wifiIp, tailscaleIp) = await TryGetDeviceIpsAsync(client, device);
 
+            // Parse key data
+            string batteryLevel = ParseBatteryLevel(batteryRaw);
+            bool isCharging = ParseIsCharging(batteryRaw);
+            string wifiSignal = ParseWifiSignal(wifiRaw);
+            string storageUsage = ParseStorageUsage(storageRaw);
+
             // Build device info
             var info = new DeviceInfo
             {
@@ -51,11 +57,12 @@ public class DeviceManager
                 Serial = device.Serial ?? "—",
                 IpAddress = wifiIp,
                 ExtraIp = tailscaleIp,
-                BatteryLevel = ParseBatteryLevel(batteryRaw),
-                WifiSignal = ParseWifiSignal(wifiRaw),
-                StorageUsage = ParseStorageUsage(storageRaw),
+                BatteryLevel = batteryLevel,
+                WifiSignal = wifiSignal,
+                StorageUsage = storageUsage,
                 DiskStatsRaw = diskStatsRaw,
-                LastUpdated = DateTime.Now
+                LastUpdated = DateTime.Now,
+                IsCharging = isCharging
             };
 
             return info;
@@ -116,12 +123,23 @@ public class DeviceManager
         return (wifiIp, tailscaleIp);
     }
 
-
     private string ParseBatteryLevel(string raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return "—";
         var match = Regex.Match(raw, @"level[:=]\s*(\d+)", RegexOptions.IgnoreCase);
         return match.Success ? $"{match.Groups[1].Value}%" : "—";
+    }
+
+    private bool ParseIsCharging(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return false;
+        var match = Regex.Match(raw, @"status:\s*(\d+)", RegexOptions.IgnoreCase);
+        if (match.Success && int.TryParse(match.Groups[1].Value, out int status))
+        {
+            // Android: 2 = charging, 3 = discharging, 5 = full
+            return status == 2;
+        }
+        return false;
     }
 
     private string ParseWifiSignal(string raw)

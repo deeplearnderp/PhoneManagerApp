@@ -15,6 +15,7 @@ public class DeviceInfoPanel : FlowLayoutPanel
     private int _lastUsedPercent;
 
     private Label _lblBattery;
+    private PictureBox _batteryIcon;
     private Label _lblDeviceName;
     private Label _lblIpAddress;
     private Label _lblLastUpdate;
@@ -47,6 +48,25 @@ public class DeviceInfoPanel : FlowLayoutPanel
         _lblStorage = CreateLabel("Storage:");
         _lblLastUpdate = CreateLabel("Last Update:");
 
+        // 🔋 Battery icon setup
+        _batteryIcon = new PictureBox
+        {
+            Size = new Size(22, 22),
+            SizeMode = PictureBoxSizeMode.Zoom,
+            Visible = false,
+            Margin = new Padding(5, 0, 0, 0)
+        };
+
+        // Group battery text + icon in a small horizontal layout
+        var batteryPanel = new FlowLayoutPanel
+        {
+            AutoSize = true,
+            FlowDirection = FlowDirection.LeftToRight,
+            Margin = new Padding(0, 4, 0, 4)
+        };
+        batteryPanel.Controls.Add(_lblBattery);
+        batteryPanel.Controls.Add(_batteryIcon);
+
         _lblStorage.Cursor = Cursors.Hand;
         _lblStorage.Click += ToggleStorageExpanded;
 
@@ -65,7 +85,7 @@ public class DeviceInfoPanel : FlowLayoutPanel
         {
             _lblDeviceName,
             _lblIpAddress,
-            _lblBattery,
+            batteryPanel,
             _lblWifi,
             _lblStorage,
             _lblStorageDetails,
@@ -128,7 +148,7 @@ public class DeviceInfoPanel : FlowLayoutPanel
     // ==========================================================
     // 🛰️ Display Device Info
     // ==========================================================
-    public void UpdateDeviceInfo(string device, string ip, string battery, string wifi, string storage, string? extraIp = null)
+    public void UpdateDeviceInfo(string device, string ip, string battery, string wifi, string storage, string? extraIp = null, bool isCharging = false)
     {
         _lblDeviceName.Text = $"Device: {device}";
 
@@ -140,7 +160,18 @@ public class DeviceInfoPanel : FlowLayoutPanel
         }
         _lblIpAddress.Text = ipText.ToString();
 
+        // 🔋 Battery with optional charging icon
         _lblBattery.Text = $"Battery: {battery}";
+        if (isCharging)
+        {
+            _batteryIcon.Image = LoadEmbeddedImage("PhoneManagerApp.Resources.charging.png");
+            _batteryIcon.Visible = true;
+        }
+        else
+        {
+            _batteryIcon.Visible = false;
+        }
+
         _lblWifi.Text = $"Wi-Fi Signal: {wifi}";
 
         // Color code Wi-Fi strength
@@ -231,5 +262,15 @@ public class DeviceInfoPanel : FlowLayoutPanel
     private double GetGb(string key, Dictionary<string, double> stats)
     {
         return stats.TryGetValue(key, out var val) ? val : 0;
+    }
+
+    private Image LoadEmbeddedImage(string resourcePath)
+    {
+        var assembly = typeof(DeviceInfoPanel).Assembly;
+        using (var stream = assembly.GetManifestResourceStream(resourcePath))
+        {
+            if (stream == null) return null;
+            return Image.FromStream(stream);
+        }
     }
 }
