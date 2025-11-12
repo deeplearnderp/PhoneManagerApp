@@ -8,10 +8,24 @@
         <ImplicitUsings>enable</ImplicitUsings>
     </PropertyGroup>
 
+    <!-- NuGet Packages -->
     <ItemGroup>
-      <PackageReference Include="Microsoft-WindowsAPICodePack-Core" Version="1.1.5" />
-      <PackageReference Include="Microsoft-WindowsAPICodePack-Shell" Version="1.1.5" />
-      <PackageReference Include="SharpAdbClient" Version="2.3.23" />
+        <PackageReference Include="Microsoft-WindowsAPICodePack-Core" Version="1.1.5" />
+        <PackageReference Include="Microsoft-WindowsAPICodePack-Shell" Version="1.1.5" />
+        <PackageReference Include="SharpAdbClient" Version="2.3.23" />
     </ItemGroup>
+
+    <!-- Legacy Folder Exclusion -->
+    <ItemGroup>
+        <!-- Exclude everything under the Legacy folder -->
+        <Compile Remove="Legacy\**\*.cs" />
+        <None Include="Legacy\**\*.cs" />
+    </ItemGroup>
+
+    <!-- Optional: If you later move it under Core, you can re-enable this -->
+    <!-- <ItemGroup>
+      <Compile Remove="Core\Legacy\**\*.cs" />
+      <None Include="Core\Legacy\**\*.cs" />
+    </ItemGroup> -->
 
 </Project>
