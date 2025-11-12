@@ -71,11 +71,11 @@ namespace PhoneManagerApp.UI.Panels
 
             try
             {
-                terminal.AppendOutput("🔔 Fetching active notifications...");
+                //terminal.AppendOutput("🔔 Fetching active notifications...");
                 var output = await ExecuteAdbCommandAsync("shell dumpsys notification --noredact");
 
                 DisplayNotifications(output);
-                terminal.AppendOutput("✅ Notifications updated.");
+                //terminal.AppendOutput("✅ Notifications updated.");
             }
             catch (Exception ex)
             {

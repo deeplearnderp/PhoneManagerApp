@@ -375,6 +375,15 @@ public class MainWindow : Form
     {
         try
         {
+            // 🧹 Handle common "clear" commands in both modes
+            var cmdLower = command.Trim().ToLowerInvariant();
+            if (cmdLower is "clear" or "cls" or "reset")
+            {
+                _terminal.ClearOutput();
+                //_terminal.AppendOutput("🧹 Terminal cleared.");
+                return;
+            }
+
             if (_androidTerminalMode)
             {
                 if (_adbConnector?.IsConnected == true)
