@@ -63,7 +63,7 @@ namespace PhoneManagerApp
             terminal = new TerminalPanel
             {
                 Dock = DockStyle.Bottom,
-                Height = 220
+                Height = 360
             };
             terminal.CommandEntered += async (_, cmd) => await ExecuteTerminalCommandAsync(cmd);
 
@@ -223,8 +223,27 @@ namespace PhoneManagerApp
         private string ParseWifiSignal(string raw)
         {
             if (string.IsNullOrWhiteSpace(raw)) return "—";
+
+            // Try to find RSSI value
             var match = Regex.Match(raw, @"RSSI[:=]\s*(-?\d+)", RegexOptions.IgnoreCase);
-            return match.Success ? $"{match.Groups[1].Value} dBm" : "—";
+            if (!match.Success) return "—";
+
+            int rssi = int.Parse(match.Groups[1].Value);
+
+            // Convert RSSI to signal strength description
+            string strength;
+            if (rssi >= -50)
+                strength = "Excellent 📶📶📶📶";
+            else if (rssi >= -60)
+                strength = "Good 📶📶📶";
+            else if (rssi >= -70)
+                strength = "Fair 📶📶";
+            else if (rssi >= -80)
+                strength = "Weak 📶";
+            else
+                strength = "Very Weak ❌";
+
+            return $"{strength} ({rssi} dBm)";
         }
 
         private string ParseStorageUsage(string raw)

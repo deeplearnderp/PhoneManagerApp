@@ -128,6 +128,18 @@ namespace PhoneManagerApp
             lblIpAddress.Text = $"IP Address: {ip}";
             lblBattery.Text = $"Battery: {battery}";
             lblWifi.Text = $"Wi-Fi Signal: {wifi}";
+
+            // Color based on strength keywords
+            if (wifi.Contains("Excellent"))
+                lblWifi.ForeColor = Color.Green;
+            else if (wifi.Contains("Good"))
+                lblWifi.ForeColor = Color.LimeGreen;
+            else if (wifi.Contains("Fair"))
+                lblWifi.ForeColor = Color.DarkOrange;
+            else if (wifi.Contains("Weak"))
+                lblWifi.ForeColor = Color.Red;
+            else
+                lblWifi.ForeColor = Color.Gray;
             lblStorage.Text = $"Storage: {storage}";
             lblLastUpdate.Text = $"Last Update: {DateTime.Now:T}";
         }
